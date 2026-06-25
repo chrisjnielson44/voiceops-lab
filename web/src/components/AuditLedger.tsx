@@ -41,7 +41,7 @@ export function AuditLedger() {
         call: { scenarioId: scenario.id, payer: scenario.payer, payerId: scenario.payerId, status, model: modelLabel },
         prediction,
         integrity: {
-          algorithm: "cyrb53-chain (demo stand-in for SHA-256)",
+          algorithm: "sha256-chain",
           head,
           eventCount: audit.length,
           verified,

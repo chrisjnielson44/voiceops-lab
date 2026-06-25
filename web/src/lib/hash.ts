@@ -1,12 +1,12 @@
 /**
- * Deterministic, dependency-free hashing used for two things:
- *   1. The audit ledger's tamper-evident hash chain (demo stand-in for SHA-256).
- *   2. Seeded pseudo-random values for analytics/benchmark demo data.
- *
- * NOTE: cyrb53 is NOT cryptographically secure. In production the audit chain
- * would use crypto.subtle.digest('SHA-256', ...). It is used here purely so the
- * demo can show a stable, chained, "immutable-looking" ledger with no deps.
+ * Hashing primitives.
+ *   1. The audit ledger's tamper-evident chain uses REAL SHA-256 (digestHex /
+ *      chainHash) — byte-identical to the backend's hashlib.sha256, so the chain
+ *      verifies on both sides.
+ *   2. cyrb53 + seeded floats are a fast, NON-cryptographic hash used only for
+ *      deterministic analytics/benchmark demo data.
  */
+import { sha256 } from "js-sha256";
 
 /** cyrb53 — fast 53-bit string hash. Returns a non-negative integer. */
 export function cyrb53(str: string, seed = 0): number {
@@ -24,18 +24,9 @@ export function cyrb53(str: string, seed = 0): number {
   return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 }
 
-function block(str: string, seed: number): string {
-  return cyrb53(str, seed).toString(16).padStart(14, "0").slice(0, 16);
-}
-
-/** Produce a 64-hex-char digest (SHA-256 shape) deterministically. */
+/** Real SHA-256 hex digest (64 chars). Matches the backend's hashlib.sha256. */
 export function digestHex(input: string): string {
-  return (
-    block(input, 1) +
-    block(input, 2) +
-    block(input, 3) +
-    block(input, 4)
-  ).slice(0, 64);
+  return sha256(input);
 }
 
 /** Chain a new payload onto a previous hash, like a tamper-evident log. */

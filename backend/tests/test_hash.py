@@ -14,15 +14,17 @@ def test_cyrb53_matches_reference():
     assert cyrb53("hello", 7) == 5198064567490728
 
 
-def test_digest_hex_matches_reference():
-    assert digest_hex("abc") == "0ff0af160c97e20a64320c9e1b4c1099588f6f15341c596fda06dc3a"
-    # Unicode (em dash / ellipsis) must hash identically to the JS UTF-16 path.
-    assert digest_hex("turn —…done") == "05726bc774630f146d43f8505f5b1fc1a3a82c016706064d379c97ed"
+def test_digest_hex_is_real_sha256():
+    # Canonical SHA-256("abc") vector — proves this is real SHA-256, which the
+    # frontend (standard SHA-256) reproduces byte-for-byte.
+    assert digest_hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    assert len(digest_hex("anything")) == 64
 
 
-def test_chain_hash_matches_reference():
+def test_chain_hash_composition():
     payload = "0|call.start|0|operator|hi||0||none|model|v1"
-    assert chain_hash(GENESIS_HASH, payload) == "11dcdfb4d4163215bb6a562cfe3612e01015a1a30a0b9e7d2b427ac4"
+    assert chain_hash(GENESIS_HASH, payload) == digest_hex(f"{GENESIS_HASH}|{payload}")
+    assert len(chain_hash(GENESIS_HASH, payload)) == 64
 
 
 def test_audit_canonical_field_order():

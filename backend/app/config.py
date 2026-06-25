@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     # Default false keeps local/dev/tests and the preview bypass working.
     require_auth: bool = False
 
+    # --- Observability ------------------------------------------------------
+    app_env: str = "development"
+    log_level: str = "INFO"
+    log_json: bool = False  # set true in prod for structured JSON logs
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.1
+
     def connection_string(self) -> str:
         cs = (
             self.database_url_unpooled

@@ -8,16 +8,35 @@ OpenAPI docs at `/docs`.
 from __future__ import annotations
 
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import db
 from app.config import settings
+from app.core.logging import configure_logging, request_id_ctx
 from app.routers import agent, analytics, health, providers, scenarios, telephony
 
+configure_logging(level=settings.log_level, as_json=settings.log_json)
 log = logging.getLogger("voiceops")
+
+# Optional error monitoring — no-op unless SENTRY_DSN is set (and sentry-sdk
+# installed). Safe in dev/tests where neither is present.
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.app_env,
+            traces_sample_rate=settings.sentry_traces_sample_rate,
+        )
+        log.info("Sentry initialized")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Sentry not initialized: %s", e)
 
 
 @asynccontextmanager
@@ -49,6 +68,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Attach a request id (honoring an upstream X-Request-ID) and log latency."""
+    rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    token = request_id_ctx.set(rid)
+    started = time.time()
+    try:
+        response = await call_next(request)
+    finally:
+        request_id_ctx.reset(token)
+    response.headers["x-request-id"] = rid
+    log.info(
+        "%s %s -> %s (%dms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        round((time.time() - started) * 1000),
+    )
+    return response
 
 app.include_router(health.router)
 app.include_router(agent.router)
