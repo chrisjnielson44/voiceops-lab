@@ -16,7 +16,7 @@ test("routes between the four tabs", async ({ page }) => {
 
   await page.getByRole("button", { name: "Voice", exact: true }).click();
   await expect(page).toHaveURL(/\/voice$/);
-  await expect(page.getByText("Start a voice call")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Voice agent sandbox" })).toBeVisible();
 
   await page.getByRole("button", { name: "Telephony", exact: true }).click();
   await expect(page).toHaveURL(/\/telephony$/);

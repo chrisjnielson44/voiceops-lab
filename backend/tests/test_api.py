@@ -120,6 +120,20 @@ async def test_analytics_graceful_without_data(client, fake_pool):
     assert r.json()["hasData"] is False
 
 
+async def test_voice_options(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "elevenlabs_api_key", "")  # force default voices (no network)
+    r = await client.get("/api/voice/options")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["scenarios"]) == 3
+    assert all(s["id"] and s["objective"] for s in body["scenarios"])
+    assert len(body["models"]) >= 1
+    assert len(body["voices"]) >= 1
+    assert body["defaults"]["scenarioId"]
+
+
 async def test_voice_token_requires_livekit_config(client, fake_pool, monkeypatch):
     # With LiveKit unconfigured -> 503, not a crash. (Clear explicitly so the test
     # is deterministic whether or not a local .env provides creds.)

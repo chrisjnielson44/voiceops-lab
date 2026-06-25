@@ -18,6 +18,7 @@ See README.md.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from typing import Any
 
@@ -60,8 +61,8 @@ def _query(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
 
 
 class PayerOpsAgent(Agent):
-    def __init__(self, recorder: CallRecorder) -> None:
-        super().__init__(instructions=INSTRUCTIONS)
+    def __init__(self, recorder: CallRecorder, instructions: str) -> None:
+        super().__init__(instructions=instructions)
         self._rec = recorder
 
     async def _record(self, tool: str, result: str, *, phi: bool, key: str | None = None) -> None:
@@ -123,30 +124,52 @@ class PayerOpsAgent(Agent):
         return result
 
 
+def _build_llm(model: str, temperature: float):
+    """Honor the selected model: local MLX models stay on-device; hosted ids route
+    to OpenRouter when a key is present."""
+    hosted = (not model.startswith("mlx-community/")) and bool(os.environ.get("OPENROUTER_API_KEY"))
+    if hosted:
+        return openai.LLM(
+            model=model,
+            base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            api_key=os.environ["OPENROUTER_API_KEY"],
+            temperature=temperature,
+        )
+    return openai.LLM(
+        model=model,
+        base_url=os.environ.get("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
+        api_key=os.environ.get("LOCAL_LLM_API_KEY", "local"),
+        temperature=temperature,
+    )
+
+
 async def entrypoint(ctx: agents.JobContext) -> None:
     await ctx.connect()
 
+    # The selected sandbox config rides on the room metadata (set by /api/voice/token).
+    try:
+        cfg = json.loads(ctx.room.metadata or "{}")
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    model = cfg.get("model") or os.environ.get("LOCAL_LLM_MODEL", "mlx-community/Qwen2.5-7B-Instruct-4bit")
+    voice_id = cfg.get("voiceId") or os.environ.get("ELEVENLABS_VOICE_ID")
+    instructions = cfg.get("instructions") or INSTRUCTIONS
+    temperature = float(cfg.get("temperature", 0.4))
+
     # Persist this voice call to the same Neon tables a text run uses. The room
     # name IS the runId (set by POST /api/voice/token).
-    recorder = CallRecorder(DB_URL, ctx.room.name, os.environ.get("LOCAL_LLM_MODEL", "livekit+mlx"))
+    recorder = CallRecorder(DB_URL, ctx.room.name, model)
     await asyncio.to_thread(recorder.start)
 
     has_eleven = bool(os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"))
 
     session = AgentSession(
-        # LLM points at the local OpenAI-compatible server (MLX). On-device.
-        llm=openai.LLM(
-            model=os.environ.get("LOCAL_LLM_MODEL", "mlx-community/Qwen2.5-7B-Instruct-4bit"),
-            base_url=os.environ.get("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
-            api_key=os.environ.get("LOCAL_LLM_API_KEY", "local"),
-        ),
+        llm=_build_llm(model, temperature),
         # ElevenLabs handles both speech-to-text (Scribe v2 realtime) and TTS
-        # from a single key; the LLM above stays on-device.
+        # from a single key; the selected voice is applied to TTS.
         stt=elevenlabs.STT(model="scribe_v2_realtime") if has_eleven else None,
         tts=(
-            elevenlabs.TTS(**({"voice_id": os.environ["ELEVENLABS_VOICE_ID"]} if os.environ.get("ELEVENLABS_VOICE_ID") else {}))
-            if has_eleven
-            else None
+            elevenlabs.TTS(**({"voice_id": voice_id} if voice_id else {})) if has_eleven else None
         ),
         # VAD: AgentSession uses the bundled silero VAD by default (no plugin needed).
         # Forward word-aligned TTS transcripts so the cockpit shows synced captions.
@@ -168,7 +191,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
     ctx.add_shutdown_callback(_finalize)
 
-    await session.start(agent=PayerOpsAgent(recorder), room=ctx.room)
+    await session.start(agent=PayerOpsAgent(recorder, instructions), room=ctx.room)
     await session.generate_reply(
         instructions="Greet the payer representative and state the reason for the call."
     )
