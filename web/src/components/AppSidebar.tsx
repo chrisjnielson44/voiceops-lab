@@ -11,7 +11,6 @@ import {
   User,
   ChevronsUpDown,
 } from "lucide-react";
-import { motion } from "framer-motion";
 
 import type { ProviderStatusResponse } from "@/state/useProviderStatus";
 import { signOut } from "@/lib/auth/client";
@@ -85,8 +84,8 @@ export function AppSidebar({
             <AudioWaveform className="relative h-5 w-5" />
           </span>
           <div className="leading-tight group-data-[collapsible=icon]:hidden">
-            <div className="text-sm font-semibold text-foreground">VoiceOps Lab</div>
-            <div className="text-[11px] text-muted-foreground">Healthcare Voice-Agent Ops</div>
+            <div className="text-sm font-semibold text-foreground">Voice Labs</div>
+            <div className="text-[11px] text-muted-foreground">Voice-Agent Sandbox</div>
           </div>
         </div>
       </SidebarHeader>
@@ -107,12 +106,6 @@ export function AppSidebar({
                     >
                       {item.icon}
                       <span>{item.label}</span>
-                      {active && (
-                        <motion.span
-                          layoutId="nav-active-dot"
-                          className="ml-auto h-1.5 w-1.5 rounded-full bg-foreground group-data-[collapsible=icon]:hidden"
-                        />
-                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

@@ -156,14 +156,8 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     color: hsl(var(--foreground));
+    /* Clean, flat sandbox canvas. */
     background-color: hsl(var(--background));
-    /* Whisper-faint dot grid + a single soft top highlight (theme-aware). */
-    background-image:
-      radial-gradient(circle at 1px 1px, hsl(var(--dot-color)) 1px, transparent 0),
-      radial-gradient(900px 520px at 50% -8%, hsl(var(--top-glow)), transparent 60%);
-    background-size: 24px 24px, 100% 100%;
-    background-position: -1px -1px, center top;
-    background-attachment: fixed;
   }
 }
 

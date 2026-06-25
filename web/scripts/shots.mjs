@@ -31,7 +31,7 @@ if (await emailField.count()) {
   await page.locator('button[type="submit"]').click();
   await page.waitForTimeout(3000);
 }
-await page.getByText("VoiceOps Lab").first().waitFor({ timeout: 15000 });
+await page.getByText("Voice Labs").first().waitFor({ timeout: 15000 });
 console.log("ready");
 
 for (const theme of THEMES) {

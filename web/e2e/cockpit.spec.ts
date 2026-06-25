@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("loads the cockpit shell (auth bypassed in preview)", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("VoiceOps Lab")).toBeVisible();
+  await expect(page.getByText("Voice Labs")).toBeVisible();
   // Header title for the landing (cockpit) route.
   await expect(page.getByRole("heading", { name: "Cockpit" })).toBeVisible();
 });

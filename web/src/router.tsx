@@ -14,7 +14,6 @@ import { AppSidebar, type TabId } from "@/components/AppSidebar";
 import { CockpitView } from "@/components/CockpitView";
 import { TelephonyView } from "@/components/TelephonyView";
 import { AuthScreen } from "@/components/AuthScreen";
-import { AmbientBackground } from "@/components/AmbientBackground";
 import {
   SidebarInset,
   SidebarProvider,
@@ -30,11 +29,11 @@ import { useSession } from "@/lib/auth/client";
 const TAB_TITLES: Record<TabId, { title: string; subtitle: string }> = {
   cockpit: { title: "Cockpit", subtitle: "Live two-agent call runtime" },
   analytics: { title: "Analytics", subtitle: "Operations KPIs from real runs" },
-  voice: { title: "Voice", subtitle: "Live browser voice call" },
+  voice: { title: "Voice", subtitle: "Live browser voice sandbox" },
   telephony: { title: "Telephony", subtitle: "Providers, dialing & integrations" },
 };
 
-// Tabs are now real routes; cockpit lives at "/".
+// Tabs are real routes; cockpit lives at "/".
 const PATH_BY_TAB = {
   cockpit: "/",
   analytics: "/analytics",
@@ -69,72 +68,54 @@ function RootShell() {
 
   if (isPending && !tailnetDemo && !PREVIEW_BYPASS) {
     return (
-      <>
-        <AmbientBackground />
-        <div
-          role="status"
-          aria-live="polite"
-          className="flex min-h-screen items-center justify-center"
-        >
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="sr-only">Loading…</span>
-        </div>
-      </>
+      <div role="status" aria-live="polite" className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <span className="sr-only">Loading…</span>
+      </div>
     );
   }
 
   if (!user) {
-    return (
-      <>
-        <AmbientBackground />
-        <AuthScreen />
-      </>
-    );
+    return <AuthScreen />;
   }
 
   const meta = TAB_TITLES[tab];
   const llm = providerStatus?.localLLM;
 
   return (
-    <>
-      <AmbientBackground />
-      <SidebarProvider>
-        <AppSidebar
-          tab={tab}
-          onTab={(t) => navigate({ to: PATH_BY_TAB[t] })}
-          providerStatus={providerStatus}
-          userName={user.name ?? undefined}
-          userEmail={user.email}
-        />
-        <SidebarInset>
-          <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/70 px-4 backdrop-blur-xl">
-            <SidebarTrigger />
-            <Separator orientation="vertical" className="h-5" />
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold text-foreground">{meta.title}</h1>
-              <p className="hidden truncate text-[11px] text-muted-foreground sm:block">{meta.subtitle}</p>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <StatusChip tone={llm?.ok ? "green" : "red"} dot pulse={llm?.ok} className="hidden md:inline-flex">
-                {llm?.ok ? "model online" : "model offline"}
-              </StatusChip>
-              <StatusChip tone="amber" dot className="hidden lg:inline-flex">
-                {providerStatus?.demoMode === false ? "live dialing" : "demo dialing"}
-              </StatusChip>
-              <ThemeToggle />
-            </div>
-          </header>
-
-          <div className="mx-auto w-full max-w-[1680px] flex-1 px-4 py-4">
-            <AnimatePresence mode="wait">
-              <MotionView key={tab}>
-                <Outlet />
-              </MotionView>
-            </AnimatePresence>
+    <SidebarProvider>
+      <AppSidebar
+        tab={tab}
+        onTab={(t) => navigate({ to: PATH_BY_TAB[t] })}
+        providerStatus={providerStatus}
+        userName={user.name ?? undefined}
+        userEmail={user.email}
+      />
+      <SidebarInset>
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-xl">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="h-5" />
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold text-foreground">{meta.title}</h1>
+            <p className="hidden truncate text-[11px] text-muted-foreground sm:block">{meta.subtitle}</p>
           </div>
-        </SidebarInset>
-      </SidebarProvider>
-    </>
+          <div className="ml-auto flex items-center gap-2">
+            <StatusChip tone={llm?.ok ? "green" : "slate"} dot pulse={llm?.ok} className="hidden md:inline-flex">
+              {llm?.ok ? "model online" : "model offline"}
+            </StatusChip>
+            <ThemeToggle />
+          </div>
+        </header>
+
+        <div className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-5 sm:px-6">
+          <AnimatePresence mode="wait">
+            <MotionView key={tab}>
+              <Outlet />
+            </MotionView>
+          </AnimatePresence>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

@@ -68,8 +68,8 @@ export function AuthScreen() {
               <AudioWaveform className="h-8 w-8" />
             </motion.span>
           </motion.div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">VoiceOps Lab</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Healthcare voice-agent operations cockpit</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Voice Labs</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Voice-agent sandbox</p>
         </div>
 
         <div className="glass rounded-3xl p-6 shadow-pop">
