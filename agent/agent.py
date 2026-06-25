@@ -24,9 +24,13 @@ import psycopg
 from dotenv import load_dotenv
 from livekit import agents
 from livekit.agents import Agent, AgentSession, RunContext, function_tool
-from livekit.plugins import openai, silero
+from livekit.plugins import elevenlabs, openai, silero
 
 load_dotenv()
+
+# The ElevenLabs plugin reads ELEVEN_API_KEY; accept the project's ELEVENLABS_API_KEY too.
+if os.environ.get("ELEVENLABS_API_KEY") and not os.environ.get("ELEVEN_API_KEY"):
+    os.environ["ELEVEN_API_KEY"] = os.environ["ELEVENLABS_API_KEY"]
 
 DB_URL = (
     os.environ.get("DATABASE_URL_UNPOOLED")
@@ -103,6 +107,8 @@ class PayerOpsAgent(Agent):
 async def entrypoint(ctx: agents.JobContext) -> None:
     await ctx.connect()
 
+    has_eleven = bool(os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"))
+
     session = AgentSession(
         # LLM points at the local OpenAI-compatible server (MLX). On-device.
         llm=openai.LLM(
@@ -110,12 +116,17 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             base_url=os.environ.get("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8080/v1"),
             api_key=os.environ.get("LOCAL_LLM_API_KEY", "local"),
         ),
-        # STT/TTS need provider keys for real audio. Swap in your providers:
-        #   from livekit.plugins import deepgram, cartesia, elevenlabs
-        #   stt=deepgram.STT(), tts=cartesia.TTS()  (or elevenlabs.TTS())
-        stt=openai.STT() if os.environ.get("OPENAI_API_KEY") else None,
-        tts=openai.TTS() if os.environ.get("OPENAI_API_KEY") else None,
+        # ElevenLabs handles both speech-to-text (Scribe v2 realtime) and TTS
+        # from a single key; the LLM above stays on-device.
+        stt=elevenlabs.STT(model="scribe_v2_realtime") if has_eleven else None,
+        tts=(
+            elevenlabs.TTS(**({"voice_id": os.environ["ELEVENLABS_VOICE_ID"]} if os.environ.get("ELEVENLABS_VOICE_ID") else {}))
+            if has_eleven
+            else None
+        ),
         vad=silero.VAD.load(),
+        # Forward word-aligned TTS transcripts so the cockpit shows synced captions.
+        use_tts_aligned_transcript=True,
     )
 
     await session.start(agent=PayerOpsAgent(), room=ctx.room)

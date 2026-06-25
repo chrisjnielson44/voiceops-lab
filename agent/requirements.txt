@@ -1,8 +1,5 @@
 # VoiceOps LiveKit voice agent
-livekit-agents[openai,silero]>=1.0.0
+# ElevenLabs handles STT (Scribe v2 realtime) + TTS from one key; LLM = local MLX.
+livekit-agents[openai,silero,elevenlabs]>=1.0.0
 psycopg[binary]>=3.2
 python-dotenv>=1.0
-# Add real STT/TTS providers as needed, e.g.:
-# livekit-plugins-deepgram
-# livekit-plugins-cartesia
-# livekit-plugins-elevenlabs

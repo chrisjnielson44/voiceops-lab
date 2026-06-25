@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # --- Voice / telephony ---------------------------------------------------
     elevenlabs_api_key: str | None = None
     elevenlabs_voice_id: str | None = None
+    # LiveKit (browser/WebRTC voice). The SPA gets a short-lived room token from
+    # /api/voice/token; the agent worker joins the same room.
     livekit_url: str | None = None
     livekit_api_key: str | None = None
     livekit_api_secret: str | None = None

@@ -120,6 +120,27 @@ async def test_analytics_graceful_without_data(client, fake_pool):
     assert r.json()["hasData"] is False
 
 
+async def test_voice_token_requires_livekit_config(client, fake_pool):
+    # LiveKit unset by default -> 503, not a crash.
+    r = await client.post("/api/voice/token", json={"scenarioId": "elig-aetna"})
+    assert r.status_code == 503
+
+
+async def test_voice_token_mints_jwt(client, fake_pool, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "livekit_url", "wss://test.livekit.cloud")
+    monkeypatch.setattr(settings, "livekit_api_key", "APItest")
+    monkeypatch.setattr(settings, "livekit_api_secret", "s" * 32)
+    r = await client.post("/api/voice/token", json={"scenarioId": "elig-aetna"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["url"] == "wss://test.livekit.cloud"
+    assert body["room"] == body["runId"]
+    assert body["runId"].startswith("voice_")
+    assert body["token"].count(".") == 2  # header.payload.signature
+
+
 async def test_require_auth_blocks_unauthenticated(client, monkeypatch):
     # With REQUIRE_AUTH on and no valid session, protected routes 401.
     from app.config import settings

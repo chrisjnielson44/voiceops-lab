@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import db
 from app.config import settings
 from app.core.logging import configure_logging, request_id_ctx
-from app.routers import agent, analytics, health, providers, scenarios, telephony
+from app.routers import agent, analytics, health, providers, scenarios, telephony, voice
 
 configure_logging(level=settings.log_level, as_json=settings.log_json)
 log = logging.getLogger("voiceops")
@@ -96,6 +96,7 @@ app.include_router(analytics.router)
 app.include_router(providers.router)
 app.include_router(telephony.router)
 app.include_router(scenarios.router)
+app.include_router(voice.router)
 
 
 @app.get("/", tags=["health"])
