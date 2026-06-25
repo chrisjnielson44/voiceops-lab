@@ -1,14 +1,11 @@
 import type { ProviderId, ProviderKind } from "./types";
 
 /**
- * Model registry — the single source of truth for which models exist, who serves
- * them, and their cost/latency characteristics. This module is isomorphic (no
- * secrets, no env reads) so it can be imported from both client and server.
+ * Model registry — factual metadata about which models exist, who serves them,
+ * their context window, and public list pricing. Isomorphic (no secrets/env).
  *
- * `qualityIndex` and `hallucinationBase` are demo-only heuristics that let the
- * deterministic adapter and the benchmark page shape realistic-looking outcomes
- * (frontier hosted models score higher; small local models are cheaper/faster
- * but slightly less reliable). They are NOT claims about real model quality.
+ * NOTE: this is descriptive metadata only — no fabricated quality/latency
+ * "scores". Real performance is measured from actual runs (see /api/analytics).
  */
 
 export interface ModelInfo {
@@ -18,14 +15,9 @@ export interface ModelInfo {
   kind: ProviderKind;
   family: string;
   contextTokens: number;
+  /** Public list pricing, USD per 1K tokens (0 for local/demo). */
   inputCostPer1k: number;
   outputCostPer1k: number;
-  /** p50 latency baseline (ms) used by the simulation + benchmark. */
-  baseLatencyMs: number;
-  /** 0..1 demo heuristic for task reliability. */
-  qualityIndex: number;
-  /** 0..1 demo heuristic for baseline hallucination tendency. */
-  hallucinationBase: number;
   strengths: string[];
   note: string;
 }
@@ -40,11 +32,8 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 32000,
     inputCostPer1k: 0,
     outputCostPer1k: 0,
-    baseLatencyMs: 120,
-    qualityIndex: 0.9,
-    hallucinationBase: 0.04,
     strengths: ["Offline", "Deterministic", "Zero-cost"],
-    note: "Built-in scripted engine. Runs with no API keys; powers the live demo call.",
+    note: "Built-in deterministic fallback engine; runs with no API keys.",
   },
   {
     id: "anthropic/claude-sonnet-4.6",
@@ -55,9 +44,6 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 200000,
     inputCostPer1k: 0.003,
     outputCostPer1k: 0.015,
-    baseLatencyMs: 540,
-    qualityIndex: 0.96,
-    hallucinationBase: 0.03,
     strengths: ["Tool use", "Long context", "Clinical reasoning"],
     note: "Balanced frontier model; strong structured tool calling for payer workflows.",
   },
@@ -70,9 +56,6 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 200000,
     inputCostPer1k: 0.0008,
     outputCostPer1k: 0.004,
-    baseLatencyMs: 320,
-    qualityIndex: 0.9,
-    hallucinationBase: 0.05,
     strengths: ["Low latency", "Cost-efficient", "High throughput"],
     note: "Fast, inexpensive frontier-tier model; good default for high call volume.",
   },
@@ -85,9 +68,6 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 128000,
     inputCostPer1k: 0.00015,
     outputCostPer1k: 0.0006,
-    baseLatencyMs: 410,
-    qualityIndex: 0.86,
-    hallucinationBase: 0.07,
     strengths: ["Very low cost", "Wide availability"],
     note: "Cheap hosted baseline; competitive on routine eligibility checks.",
   },
@@ -100,9 +80,6 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 128000,
     inputCostPer1k: 0.0004,
     outputCostPer1k: 0.0004,
-    baseLatencyMs: 620,
-    qualityIndex: 0.88,
-    hallucinationBase: 0.06,
     strengths: ["Open weights", "Self-hostable", "Symmetric pricing"],
     note: "Open-weight option routable via OpenRouter or self-hosted behind MLX.",
   },
@@ -115,9 +92,6 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 32000,
     inputCostPer1k: 0,
     outputCostPer1k: 0,
-    baseLatencyMs: 280,
-    qualityIndex: 0.82,
-    hallucinationBase: 0.09,
     strengths: ["On-device", "No PHI egress", "Zero marginal cost"],
     note: "Runs locally via MLX LM on Apple silicon. Keeps PHI on the machine.",
   },
@@ -130,9 +104,6 @@ export const MODELS: ModelInfo[] = [
     contextTokens: 32000,
     inputCostPer1k: 0,
     outputCostPer1k: 0,
-    baseLatencyMs: 300,
-    qualityIndex: 0.8,
-    hallucinationBase: 0.1,
     strengths: ["On-device", "No PHI egress", "Offline-capable"],
     note: "Local fallback model; useful where data residency rules forbid hosted calls.",
   },

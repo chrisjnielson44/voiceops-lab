@@ -1,7 +1,7 @@
 """
-Operational analytics aggregated from persisted call runs. Ported from the
-Next.js `/api/analytics` route — returns live numbers from the database; the UI
-falls back to its sample dataset for historical views when there are no runs yet.
+Operational analytics aggregated from persisted call runs — 100% real numbers
+from the database (no synthetic baseline). When there are no runs yet, `hasData`
+is false and the UI shows honest empty states.
 """
 from __future__ import annotations
 
@@ -39,6 +39,18 @@ async def analytics():
                       avg(extract(epoch from (ended_at - started_at))) FILTER (WHERE ended_at IS NOT NULL) AS aht
                FROM call_runs GROUP BY payer ORDER BY calls DESC"""
         )
+        models = await query(
+            """SELECT model,
+                      count(*) AS calls,
+                      count(*) FILTER (WHERE outcome='completed')::float / greatest(count(*),1) AS completion,
+                      count(*) FILTER (WHERE outcome='escalated')::float / greatest(count(*),1) AS escalation,
+                      avg(extract(epoch from (ended_at - started_at))) FILTER (WHERE ended_at IS NOT NULL) AS aht
+               FROM call_runs WHERE model IS NOT NULL GROUP BY model ORDER BY calls DESC"""
+        )
+        volume = await query(
+            """SELECT extract(hour from started_at)::int AS hour, count(*) AS calls
+               FROM call_runs WHERE started_at IS NOT NULL GROUP BY 1 ORDER BY 1"""
+        )
 
         total = int((totals or {}).get("total") or 0)
         completed = int((totals or {}).get("completed") or 0)
@@ -68,6 +80,20 @@ async def analytics():
                     "ahtSec": round(float(p["aht"])) if p["aht"] else 0,
                 }
                 for p in payers
+            ],
+            "models": [
+                {
+                    "model": m["model"],
+                    "calls": int(m["calls"]),
+                    "completionRate": float(m["completion"]),
+                    "escalationRate": float(m["escalation"]),
+                    "ahtSec": round(float(m["aht"])) if m["aht"] else 0,
+                }
+                for m in models
+            ],
+            "volumeByHour": [
+                {"hour": f"{int(v['hour']):02d}:00", "calls": int(v["calls"])}
+                for v in volume
             ],
         }
     except Exception as e:  # noqa: BLE001 - mirror TS: degrade gracefully, HTTP 200

@@ -120,8 +120,14 @@ async def test_analytics_graceful_without_data(client, fake_pool):
     assert r.json()["hasData"] is False
 
 
-async def test_voice_token_requires_livekit_config(client, fake_pool):
-    # LiveKit unset by default -> 503, not a crash.
+async def test_voice_token_requires_livekit_config(client, fake_pool, monkeypatch):
+    # With LiveKit unconfigured -> 503, not a crash. (Clear explicitly so the test
+    # is deterministic whether or not a local .env provides creds.)
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "livekit_url", None)
+    monkeypatch.setattr(settings, "livekit_api_key", None)
+    monkeypatch.setattr(settings, "livekit_api_secret", None)
     r = await client.post("/api/voice/token", json={"scenarioId": "elig-aetna"})
     assert r.status_code == 503
 

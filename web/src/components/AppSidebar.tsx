@@ -4,7 +4,7 @@ import {
   AudioWaveform,
   Radio,
   BarChart3,
-  FlaskConical,
+  Mic,
   PhoneCall,
   LogOut,
   Cpu,
@@ -40,12 +40,12 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/cn";
 
-export type TabId = "cockpit" | "analytics" | "benchmarks" | "telephony";
+export type TabId = "cockpit" | "analytics" | "voice" | "telephony";
 
 const NAV: { id: TabId; label: string; icon: React.ReactNode; hint: string }[] = [
   { id: "cockpit", label: "Cockpit", icon: <Radio className="h-4 w-4" />, hint: "Live call runtime" },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" />, hint: "Operations KPIs" },
-  { id: "benchmarks", label: "Benchmarks", icon: <FlaskConical className="h-4 w-4" />, hint: "Model scorecards" },
+  { id: "voice", label: "Voice", icon: <Mic className="h-4 w-4" />, hint: "Live browser voice call" },
   { id: "telephony", label: "Telephony", icon: <PhoneCall className="h-4 w-4" />, hint: "Providers & dialing" },
 ];
 

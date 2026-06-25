@@ -30,7 +30,7 @@ import { useSession } from "@/lib/auth/client";
 const TAB_TITLES: Record<TabId, { title: string; subtitle: string }> = {
   cockpit: { title: "Cockpit", subtitle: "Live two-agent call runtime" },
   analytics: { title: "Analytics", subtitle: "Operations KPIs from real runs" },
-  benchmarks: { title: "Benchmarks", subtitle: "Model & provider scorecards" },
+  voice: { title: "Voice", subtitle: "Live browser voice call" },
   telephony: { title: "Telephony", subtitle: "Providers, dialing & integrations" },
 };
 
@@ -38,13 +38,13 @@ const TAB_TITLES: Record<TabId, { title: string; subtitle: string }> = {
 const PATH_BY_TAB = {
   cockpit: "/",
   analytics: "/analytics",
-  benchmarks: "/benchmarks",
+  voice: "/voice",
   telephony: "/telephony",
 } as const;
 
 function tabFromPath(pathname: string): TabId {
   if (pathname.startsWith("/analytics")) return "analytics";
-  if (pathname.startsWith("/benchmarks")) return "benchmarks";
+  if (pathname.startsWith("/voice")) return "voice";
   if (pathname.startsWith("/telephony")) return "telephony";
   return "cockpit";
 }
@@ -152,25 +152,25 @@ function TelephonyRoute() {
   return <TelephonyView providerStatus={data} />;
 }
 
-// Cockpit (landing) + Telephony are eager; the recharts-heavy Analytics and
-// Benchmarks views are code-split so their chart bundle loads only on demand.
+// Cockpit (landing) + Telephony are eager; the recharts-heavy Analytics and the
+// LiveKit-heavy Voice views are code-split so their bundles load only on demand.
 const cockpitRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: CockpitRoute });
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/analytics",
   component: lazyRouteComponent(() => import("@/components/AnalyticsView"), "AnalyticsView"),
 });
-const benchmarksRoute = createRoute({
+const voiceRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/benchmarks",
-  component: lazyRouteComponent(() => import("@/components/BenchmarkView"), "BenchmarkView"),
+  path: "/voice",
+  component: lazyRouteComponent(() => import("@/components/VoiceView"), "VoiceView"),
 });
 const telephonyRoute = createRoute({ getParentRoute: () => rootRoute, path: "/telephony", component: TelephonyRoute });
 
 const routeTree = rootRoute.addChildren([
   cockpitRoute,
   analyticsRoute,
-  benchmarksRoute,
+  voiceRoute,
   telephonyRoute,
 ]);
 

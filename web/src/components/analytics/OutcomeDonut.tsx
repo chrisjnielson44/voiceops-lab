@@ -1,11 +1,16 @@
 "use client";
 
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import type { OutcomeSlice } from "@/lib/analytics/data";
+
+export interface OutcomeSlice {
+  label: string;
+  value: number;
+  color: string;
+}
 
 /**
- * Animated donut for the outcome mix. Center label shows the "Resolved" share.
- * Legend is rendered by the parent so it can sit beside the chart.
+ * Donut for the real outcome mix of persisted runs. Center label shows the
+ * "Resolved" (completed) share.
  */
 export function OutcomeDonut({ data }: { data: OutcomeSlice[] }) {
   const resolved = data.find((d) => d.label === "Resolved")?.value ?? 0;
@@ -35,12 +40,8 @@ export function OutcomeDonut({ data }: { data: OutcomeSlice[] }) {
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="tabular text-2xl font-bold tracking-tight text-foreground">
-          {resolved}%
-        </span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          resolved
-        </span>
+        <span className="tabular text-2xl font-bold tracking-tight text-foreground">{resolved}%</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">resolved</span>
       </div>
     </div>
   );

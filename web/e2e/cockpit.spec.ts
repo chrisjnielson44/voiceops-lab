@@ -14,9 +14,9 @@ test("routes between the four tabs", async ({ page }) => {
   await expect(page).toHaveURL(/\/analytics$/);
   await expect(page.getByRole("heading", { name: "Operations analytics" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Benchmarks", exact: true }).click();
-  await expect(page).toHaveURL(/\/benchmarks$/);
-  await expect(page.getByText("Model & provider benchmarks")).toBeVisible();
+  await page.getByRole("button", { name: "Voice", exact: true }).click();
+  await expect(page).toHaveURL(/\/voice$/);
+  await expect(page.getByText("Start a voice call")).toBeVisible();
 
   await page.getByRole("button", { name: "Telephony", exact: true }).click();
   await expect(page).toHaveURL(/\/telephony$/);
