@@ -36,7 +36,7 @@ function MiniStat({
   accent?: string;
 }) {
   return (
-    <MotionItem className="liquid-glass flex items-center gap-2.5 rounded-2xl px-3 py-2.5">
+    <MotionItem className="glass flex items-center gap-2.5 rounded-2xl px-3 py-2.5 shadow-glass">
       <span
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground ring-1 ring-inset ring-border",

@@ -65,11 +65,13 @@
     --sidebar-border: 240 6% 90%;
     --sidebar-ring: 240 6% 45%;
 
-    --chart-1: 217 91% 55%;
-    --chart-2: 160 60% 40%;
-    --chart-3: 35 92% 50%;
-    --chart-4: 270 65% 58%;
-    --chart-5: 350 75% 55%;
+    /* Muted, low-saturation data palette — monochrome-leaning, distinct by
+       value/hue without neon. (light) */
+    --chart-1: 220 28% 46%;
+    --chart-2: 165 30% 40%;
+    --chart-3: 35 45% 50%;
+    --chart-4: 255 22% 54%;
+    --chart-5: 350 40% 52%;
 
     /* iOS-26 liquid glass (light): bright, frosted, glossy top edge. */
     --lg-tint: 0 0% 100% / 0.55;
@@ -122,11 +124,12 @@
     --sidebar-border: 240 5% 13%;
     --sidebar-ring: 0 0% 64%;
 
-    --chart-1: 217 91% 60%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 38 92% 55%;
-    --chart-4: 270 70% 66%;
-    --chart-5: 350 75% 60%;
+    /* Muted, low-saturation data palette — monochrome-leaning. (dark) */
+    --chart-1: 220 32% 62%;
+    --chart-2: 165 34% 50%;
+    --chart-3: 38 48% 58%;
+    --chart-4: 255 26% 66%;
+    --chart-5: 350 44% 62%;
 
     /* iOS-26 liquid glass (dark): a dim frosted slab with a faint top sheen. */
     --lg-tint: 240 10% 16% / 0.5;

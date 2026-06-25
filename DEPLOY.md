@@ -46,7 +46,8 @@ flyctl secrets set --app voiceops-api \
   AUTH_SERVER_URL="http://voiceops-auth.internal:3000" \
   CORS_ORIGINS="https://<your-vercel-domain>" \
   LOCAL_LLM_BASE_URL="..." LOCAL_LLM_MODEL="..." LOCAL_LLM_API_KEY="..."
-flyctl deploy --app voiceops-api
+flyctl deploy --app voiceops-api   # release_command runs `alembic upgrade head`
+flyctl ssh console --app voiceops-api -C "python scripts/setup_db.py"   # seed once
 ```
 
 > The local MLX model server isn't reachable from Fly. For the hosted demo, point

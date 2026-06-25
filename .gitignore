@@ -29,6 +29,11 @@ __pycache__/
 /out
 design-preview/
 **/design-preview/
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/
+blob-report/
 
 # --- claude code harness artifacts (not part of the product) ---
 .agents/

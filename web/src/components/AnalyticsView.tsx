@@ -76,7 +76,7 @@ function LiveOpsStrip() {
   ];
 
   return (
-    <Card className="liquid-glass overflow-hidden">
+    <Card className="overflow-hidden">
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
         <div className="flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-secondary text-foreground">
@@ -105,11 +105,11 @@ function LiveOpsStrip() {
         </Badge>
       </CardHeader>
       <CardContent className="p-0">
-        <MotionStagger className="grid grid-cols-2 gap-px bg-border/50 sm:grid-cols-3 lg:grid-cols-6">
+        <MotionStagger className="grid grid-cols-2 gap-px bg-secondary/60 sm:grid-cols-3 lg:grid-cols-6">
           {cards.map((c) => (
             <MotionItem
               key={c.label}
-              className="bg-transparent px-4 py-3.5 transition-colors hover:bg-accent/40"
+              className="bg-card px-4 py-3.5 transition-colors hover:bg-accent"
             >
               <div className="tabular text-xl font-bold tracking-tight text-foreground">
                 {c.value}
@@ -169,7 +169,7 @@ function KpiCard({ kpi }: { kpi: KpiMetric }) {
 
   return (
     <MotionItem className="h-full">
-      <Card className="liquid-glass group h-full transition-colors">
+      <Card className="group h-full transition-colors hover:border-border">
         <CardContent className="flex h-full flex-col p-4">
           <div className="flex items-start justify-between gap-2">
             <span className="text-xs font-medium text-muted-foreground">{kpi.label}</span>

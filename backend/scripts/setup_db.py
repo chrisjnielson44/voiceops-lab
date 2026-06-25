@@ -1,11 +1,12 @@
 """
-Idempotent DB setup — Python port of `scripts/setup-db.mjs`. Creates the payer
-ground-truth tables + call-persistence tables and seeds demo payer records.
+Seed the demo payer ground-truth data (members, coverage, claims, prior auths).
 
-The seeded rows are the REAL data the agent's tools query at runtime — the agent
-does not get canned answers; it must call tools that hit these tables.
+SCHEMA is owned by Alembic — run `alembic upgrade head` first (this script only
+inserts rows; it no longer creates tables). The seeded rows are the REAL data the
+agent's tools query at runtime — the agent does not get canned answers; it must
+call tools that hit these tables.
 
-Run with:  python scripts/setup_db.py   (from the backend/ directory)
+Run with:  alembic upgrade head && python scripts/setup_db.py   (from backend/)
 """
 from __future__ import annotations
 
@@ -19,87 +20,6 @@ import asyncpg
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings  # noqa: E402
-
-DDL = """
-CREATE TABLE IF NOT EXISTS members (
-  member_id     TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  dob           DATE NOT NULL,
-  payer         TEXT NOT NULL,
-  payer_id      TEXT NOT NULL,
-  plan_type     TEXT,
-  group_number  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS coverage (
-  member_id        TEXT PRIMARY KEY REFERENCES members(member_id),
-  active           BOOLEAN NOT NULL DEFAULT TRUE,
-  effective_date   DATE,
-  copay_pcp        NUMERIC(8,2),
-  copay_spec       NUMERIC(8,2),
-  deductible_total NUMERIC(10,2),
-  deductible_met   NUMERIC(10,2),
-  oop_max          NUMERIC(10,2),
-  oop_met          NUMERIC(10,2)
-);
-
-CREATE TABLE IF NOT EXISTS claims (
-  claim_id              TEXT PRIMARY KEY,
-  member_id             TEXT REFERENCES members(member_id),
-  dos                   DATE,
-  billed_amount         NUMERIC(10,2),
-  cpt                   TEXT,
-  status                TEXT,
-  carc_code             TEXT,
-  denial_reason         TEXT,
-  resubmission_path     TEXT,
-  timely_filing_deadline DATE
-);
-
-CREATE TABLE IF NOT EXISTS prior_auths (
-  auth_id                 TEXT PRIMARY KEY,
-  member_id               TEXT REFERENCES members(member_id),
-  cpt                     TEXT,
-  status                  TEXT,
-  clinical_criteria_unmet TEXT,
-  reviewer                TEXT,
-  determination           TEXT
-);
-
-CREATE TABLE IF NOT EXISTS call_runs (
-  id              TEXT PRIMARY KEY,
-  user_id         TEXT,
-  scenario_id     TEXT,
-  payer           TEXT,
-  model           TEXT,
-  status          TEXT,
-  outcome         TEXT,
-  completion_prob NUMERIC(5,4),
-  escalation_risk NUMERIC(5,4),
-  started_at      TIMESTAMPTZ DEFAULT now(),
-  ended_at        TIMESTAMPTZ
-);
-
-CREATE TABLE IF NOT EXISTS call_events (
-  id          BIGSERIAL PRIMARY KEY,
-  run_id      TEXT REFERENCES call_runs(id) ON DELETE CASCADE,
-  seq         INT,
-  type        TEXT,
-  at_ms       BIGINT,
-  actor       TEXT,
-  summary     TEXT,
-  model       TEXT,
-  tool        TEXT,
-  phi         BOOLEAN DEFAULT FALSE,
-  phi_scope   TEXT,
-  redaction   TEXT,
-  hash        TEXT,
-  prev_hash   TEXT,
-  payload     JSONB,
-  created_at  TIMESTAMPTZ DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_call_events_run ON call_events(run_id, seq);
-"""
 
 MEMBERS = [
     ("W2049-88147", "Maria Alvarez", "1984-03-22", "Aetna", "AET-114", "Open Access PPO", "7741-A"),
@@ -145,10 +65,7 @@ def _ssl_context() -> ssl.SSLContext:
 async def main() -> None:
     conn = await asyncpg.connect(dsn=settings.connection_string(), ssl=_ssl_context())
     try:
-        print("Creating tables…")
-        await conn.execute(DDL)
-
-        print("Seeding members…")
+        print("Seeding members…  (schema must already exist — run `alembic upgrade head`)")
         for m in MEMBERS:
             await conn.execute(
                 """INSERT INTO members(member_id,name,dob,payer,payer_id,plan_type,group_number)

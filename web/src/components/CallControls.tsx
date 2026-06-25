@@ -52,7 +52,7 @@ function CallOrb({ active }: { active: boolean }) {
       <motion.span
         transition={{ duration: 0.4 }}
         className={cn(
-          "liquid-glass relative flex h-12 w-12 items-center justify-center rounded-full text-foreground",
+          "relative flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-pop",
           active && "ring-2 ring-emerald-500/40",
         )}
       >

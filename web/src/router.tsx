@@ -107,7 +107,7 @@ function RootShell() {
           userEmail={user.email}
         />
         <SidebarInset>
-          <header className="liquid-glass sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 rounded-none border-x-0 border-t-0 px-4">
+          <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/70 px-4 backdrop-blur-xl">
             <SidebarTrigger />
             <Separator orientation="vertical" className="h-5" />
             <div className="min-w-0">

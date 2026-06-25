@@ -141,11 +141,13 @@ export interface OutcomeSlice {
   color: string;
 }
 
+// Muted, monochrome-leaning slice colors that match the desaturated --chart-*
+// palette (green / amber / slate-blue / rose), still distinct but never neon.
 export const OUTCOME_MIX: OutcomeSlice[] = [
-  { label: "Resolved", value: 78, color: "#16a34a" },
-  { label: "Escalated", value: 14, color: "#f59e0b" },
-  { label: "Transferred", value: 5, color: "#3366f6" },
-  { label: "Abandoned", value: 3, color: "#dc2626" },
+  { label: "Resolved", value: 78, color: "#4f8a72" },
+  { label: "Escalated", value: 14, color: "#bb8a47" },
+  { label: "Transferred", value: 5, color: "#5b6a93" },
+  { label: "Abandoned", value: 3, color: "#b15a6b" },
 ];
 
 /** Call volume by hour (08:00–19:00), deterministic. */

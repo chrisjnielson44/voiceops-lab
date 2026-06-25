@@ -26,7 +26,8 @@ app/
   simulation/        scenario library
   routers/           /api/agent/* · /api/analytics · /api/providers · /api/llm
                      · /api/telephony · /api/scenarios · /healthz
-scripts/setup_db.py  idempotent DDL + seed (port of scripts/setup-db.mjs)
+migrations/          Alembic — schema source of truth (0001 = initial schema)
+scripts/setup_db.py  seeds the demo payer data (schema comes from Alembic)
 tests/               pytest suite (runs with no external services)
 ```
 
@@ -37,7 +38,8 @@ cd backend
 uv venv && uv pip install -e ".[dev]"      # or: python -m venv .venv && pip install -e ".[dev]"
 cp .env.example .env                        # fill in DATABASE_URL_UNPOOLED + LOCAL_LLM_*
 
-# one-time DB setup (creates payer ground-truth + call tables, seeds demo data)
+# one-time DB setup: schema via Alembic, then seed the demo payer data
+.venv/bin/alembic upgrade head
 .venv/bin/python scripts/setup_db.py
 
 # start a local model server (MLX preferred), then run the API
