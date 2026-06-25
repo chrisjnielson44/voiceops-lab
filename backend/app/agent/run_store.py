@@ -1,0 +1,83 @@
+"""
+In-memory registry of active call runs — the asyncio analogue of
+`src/lib/agent/runStore.ts`. A module-level dict holds each run; every run
+buffers its full event log so a late-joining SSE client can replay, and fans new
+events out to a set of per-subscriber `asyncio.Queue`s.
+
+Single-instance only (a demo/dev server), exactly like the Node original. Pause/
+stop are cooperative flags; `abort` is an `asyncio.Event` that in-flight LLM
+calls race against so a stop interrupts inference promptly.
+"""
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+
+from app.core.format import now_ms
+
+# Sentinel pushed into subscriber queues to signal "no more events".
+STREAM_END = object()
+
+
+@dataclass
+class RunState:
+    id: str
+    scenario_id: str
+    model: str
+    user_id: str | None = None
+    status: str = "dialing"
+    events: list[dict] = field(default_factory=list)
+    subscribers: set[asyncio.Queue] = field(default_factory=set)
+    paused: bool = False
+    stopped: bool = False
+    done: bool = False
+    started_at: float = field(default_factory=now_ms)
+    abort: asyncio.Event = field(default_factory=asyncio.Event)
+    task: asyncio.Task | None = None
+
+
+_runs: dict[str, RunState] = {}
+
+
+def create_run(*, id: str, scenario_id: str, model: str, user_id: str | None = None) -> RunState:
+    run = RunState(id=id, scenario_id=scenario_id, model=model, user_id=user_id)
+    _runs[id] = run
+    # Evict old finished runs to bound memory.
+    if len(_runs) > 50:
+        for rid, r in list(_runs.items()):
+            if r.done and len(_runs) > 50:
+                del _runs[rid]
+    return run
+
+
+def get_run(run_id: str) -> RunState | None:
+    return _runs.get(run_id)
+
+
+def emit(run: RunState, event: dict) -> None:
+    run.events.append(event)
+    if event.get("kind") == "status":
+        run.status = event["status"]
+    for q in list(run.subscribers):
+        try:
+            q.put_nowait(event)
+        except Exception:  # noqa: BLE001 - a full/closed subscriber queue is ignorable
+            pass
+
+
+def subscribe(run: RunState) -> asyncio.Queue:
+    q: asyncio.Queue = asyncio.Queue()
+    run.subscribers.add(q)
+    return q
+
+
+def unsubscribe(run: RunState, q: asyncio.Queue) -> None:
+    run.subscribers.discard(q)
+
+
+def close_subscribers(run: RunState) -> None:
+    for q in list(run.subscribers):
+        try:
+            q.put_nowait(STREAM_END)
+        except Exception:  # noqa: BLE001
+            pass

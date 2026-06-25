@@ -1,0 +1,16 @@
+{
+  "name": "voiceops-auth-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Standalone Better Auth server for VoiceOps Lab (replaces the Next.js /api/auth host).",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "migrate": "node migrate.mjs"
+  },
+  "dependencies": {
+    "better-auth": "^1.2.0",
+    "pg": "^8.13.1"
+  }
+}

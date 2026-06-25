@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" class="dark" style="color-scheme: dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0b" />
+    <title>VoiceOps Lab — Healthcare Voice-Agent Operations</title>
+    <meta
+      name="description"
+      content="Model-agnostic healthcare voice-agent operations platform: orchestration, hosted/local routing, simulated payer calls, predictive modeling, audit, analytics, and benchmarks."
+    />
+    <!-- Blocking theme script: set the .dark class before first paint (no FOUC). Mirrors themeInitScript in ThemeProvider.tsx. -->
+    <script>
+      (function () {
+        try {
+          var k = "voiceops-theme";
+          var s = localStorage.getItem(k) || "dark";
+          var d = s === "dark" || (s === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var r = document.documentElement;
+          r.classList.toggle("dark", d);
+          r.style.colorScheme = d ? "dark" : "light";
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.style.colorScheme = "dark";
+        }
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen bg-background text-foreground antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,296 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-inter: "Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Text",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas,
+    monospace;
+}
+
+/* ===========================================================================
+   COMMON PALETTE
+   One zinc-neutral system shared by both themes, with a single azure brand
+   accent (Tailwind `brand-*`). Chrome stays neutral; color is reserved for
+   data, status, and the brand accent.
+
+     - Light: clean near-white surfaces, near-black primary (Vercel/Linear).
+     - Dark : OLED-deep near-black, near-white primary (Vercel/Cursor).
+
+   Surfaces are flat by default (`.glass*`). A separate iOS-26 `.liquid-glass`
+   treatment (translucent + blurred + specular) is opt-in, used on the chrome,
+   overlays, hero cards, and the call cockpit.
+   Tokens are HSL triplets so the shadcn `hsl(var(--token))` pattern works.
+=========================================================================== */
+@layer base {
+  /* ----- LIGHT (default) ----- */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 8%;
+
+    --primary: 240 6% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 44%;
+
+    --accent: 240 5% 93%;
+    --accent-foreground: 240 6% 10%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 86%;
+    --ring: 240 6% 45%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 240 20% 99%;
+    --sidebar-foreground: 240 5% 35%;
+    --sidebar-primary: 240 6% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 5% 93%;
+    --sidebar-accent-foreground: 240 6% 10%;
+    --sidebar-border: 240 6% 90%;
+    --sidebar-ring: 240 6% 45%;
+
+    --chart-1: 217 91% 55%;
+    --chart-2: 160 60% 40%;
+    --chart-3: 35 92% 50%;
+    --chart-4: 270 65% 58%;
+    --chart-5: 350 75% 55%;
+
+    /* iOS-26 liquid glass (light): bright, frosted, glossy top edge. */
+    --lg-tint: 0 0% 100% / 0.55;
+    --lg-sheen: 0 0% 100% / 0.55;
+    --lg-border: 0 0% 100% / 0.65;
+    --lg-highlight: 0 0% 100% / 0.9;
+    --lg-shadow: 0 10px 30px -12px hsl(240 20% 30% / 0.22), 0 2px 8px -4px hsl(240 20% 30% / 0.12);
+
+    /* Body texture tuned per theme. */
+    --dot-color: 240 10% 50% / 0.07;
+    --top-glow: 240 30% 60% / 0.06;
+  }
+
+  /* ----- DARK ----- */
+  .dark {
+    --background: 240 6% 4%;
+    --foreground: 0 0% 95%;
+
+    --card: 240 5% 7%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 240 6% 8%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 0 0% 96%;
+    --primary-foreground: 240 6% 6%;
+
+    --secondary: 240 4% 13%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 240 4% 12%;
+    --muted-foreground: 240 5% 60%;
+
+    --accent: 240 4% 15%;
+    --accent-foreground: 0 0% 96%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 5% 16%;
+    --input: 240 5% 18%;
+    --ring: 0 0% 64%;
+
+    --sidebar-background: 240 6% 5%;
+    --sidebar-foreground: 240 5% 65%;
+    --sidebar-primary: 0 0% 96%;
+    --sidebar-primary-foreground: 240 6% 6%;
+    --sidebar-accent: 240 5% 12%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 240 5% 13%;
+    --sidebar-ring: 0 0% 64%;
+
+    --chart-1: 217 91% 60%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 38 92% 55%;
+    --chart-4: 270 70% 66%;
+    --chart-5: 350 75% 60%;
+
+    /* iOS-26 liquid glass (dark): a dim frosted slab with a faint top sheen. */
+    --lg-tint: 240 10% 16% / 0.5;
+    --lg-sheen: 0 0% 100% / 0.06;
+    --lg-border: 0 0% 100% / 0.1;
+    --lg-highlight: 0 0% 100% / 0.12;
+    --lg-shadow: 0 12px 36px -12px hsl(0 0% 0% / 0.7), 0 2px 8px -4px hsl(0 0% 0% / 0.5);
+
+    --dot-color: 0 0% 100% / 0.02;
+    --top-glow: 0 0% 100% / 0.035;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    font-family: var(--font-inter);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    color: hsl(var(--foreground));
+    background-color: hsl(var(--background));
+    /* Whisper-faint dot grid + a single soft top highlight (theme-aware). */
+    background-image:
+      radial-gradient(circle at 1px 1px, hsl(var(--dot-color)) 1px, transparent 0),
+      radial-gradient(900px 520px at 50% -8%, hsl(var(--top-glow)), transparent 60%);
+    background-size: 24px 24px, 100% 100%;
+    background-position: -1px -1px, center top;
+    background-attachment: fixed;
+  }
+}
+
+/* ===========================================================================
+   FLAT SURFACES — `.glass*` (kept the class names; they are flat panels now,
+   token-driven so they adapt to light/dark automatically).
+=========================================================================== */
+@layer components {
+  .glass {
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    box-shadow: 0 1px 2px 0 hsl(0 0% 0% / 0.06);
+  }
+  .dark .glass {
+    box-shadow: 0 1px 2px 0 hsl(0 0% 0% / 0.4);
+  }
+  .glass-soft {
+    background-color: hsl(var(--secondary) / 0.5);
+    border: 1px solid hsl(var(--border));
+  }
+  .glass-inset {
+    background-color: hsl(var(--muted) / 0.6);
+    border: 1px solid hsl(var(--border));
+    box-shadow: inset 0 1px 2px hsl(0 0% 0% / 0.06);
+  }
+  .dark .glass-inset {
+    box-shadow: inset 0 1px 2px hsl(0 0% 0% / 0.25);
+  }
+  .glass-chip {
+    background-color: hsl(var(--secondary) / 0.55);
+    -webkit-backdrop-filter: blur(10px) saturate(160%);
+    backdrop-filter: blur(10px) saturate(160%);
+  }
+
+  /* =========================================================================
+     iOS-26 LIQUID GLASS — opt-in. Translucent tint + heavy backdrop blur +
+     saturation lift + a glossy top sheen + specular inset highlight. Use on
+     floating chrome, overlays, hero cards, and the call cockpit.
+  ========================================================================= */
+  .liquid-glass {
+    position: relative;
+    background-image: linear-gradient(180deg, hsl(var(--lg-sheen)), transparent 42%);
+    background-color: hsl(var(--lg-tint));
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid hsl(var(--lg-border));
+    box-shadow: var(--lg-shadow), inset 0 1px 0 0 hsl(var(--lg-highlight));
+  }
+  /* A lighter weight for chips / small surfaces. */
+  .liquid-glass-soft {
+    position: relative;
+    background-color: hsl(var(--lg-tint));
+    -webkit-backdrop-filter: blur(14px) saturate(170%);
+    backdrop-filter: blur(14px) saturate(170%);
+    border: 1px solid hsl(var(--lg-border));
+    box-shadow: inset 0 1px 0 0 hsl(var(--lg-highlight));
+  }
+  /* Specular edge-light running along the top — adds the "wet" iOS look.
+     Apply alongside .liquid-glass on elements with overflow visible/hidden. */
+  .liquid-glass-edge::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      180deg,
+      hsl(var(--lg-highlight)),
+      transparent 35%,
+      transparent 70%,
+      hsl(var(--lg-border))
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Honor a reduced-transparency preference: fall back to flat surfaces. */
+  @media (prefers-reduced-transparency: reduce) {
+    .liquid-glass,
+    .liquid-glass-soft {
+      background-image: none;
+      background-color: hsl(var(--card));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+}
+
+/* ---- Scrollbars (theme-aware) ---- */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.35);
+  border-radius: 9999px;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.55);
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Live "speaking" equalizer used in the transcript. */
+.eq-bar {
+  width: 2px;
+  border-radius: 9999px;
+  background-color: currentColor;
+  transform-origin: bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

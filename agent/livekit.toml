@@ -1,0 +1,7 @@
+# LiveKit Cloud agent manifest. `lk agent create` uses/updates this file.
+# Filled in after `lk cloud auth` selects your project.
+[project]
+  subdomain = ""
+
+[agent]
+  id = ""

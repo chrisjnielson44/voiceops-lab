@@ -1,0 +1,31 @@
+# FastAPI backend. Deploy: flyctl deploy  (override app per env with --app).
+# Secrets (flyctl secrets set ...): DATABASE_URL_UNPOOLED, AUTH_SERVER_URL,
+# REQUIRE_AUTH, CORS_ORIGINS, LOCAL_LLM_BASE_URL/MODEL/API_KEY, OPENROUTER_API_KEY.
+app = "voiceops-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+  REQUIRE_AUTH = "true"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

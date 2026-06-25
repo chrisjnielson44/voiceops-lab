@@ -1,0 +1,52 @@
+name: Deploy
+
+# main -> production, develop -> staging. Fly apps are suffixed for staging
+# (voiceops-api-staging / voiceops-auth-staging). Secrets live in GitHub
+# Environments (production / staging): FLY_API_TOKEN, VERCEL_TOKEN,
+# VERCEL_ORG_ID, VERCEL_PROJECT_ID.
+on:
+  push:
+    branches: [main, develop]
+
+concurrency: deploy-${{ github.ref }}
+
+jobs:
+  fly:
+    name: Deploy auth + backend (Fly.io)
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      SUFFIX: ${{ github.ref == 'refs/heads/main' && '' || '-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy auth-server
+        working-directory: auth-server
+        run: flyctl deploy --remote-only --app "voiceops-auth${SUFFIX}"
+      - name: Deploy backend
+        working-directory: backend
+        run: flyctl deploy --remote-only --app "voiceops-api${SUFFIX}"
+
+  web:
+    name: Deploy SPA (Vercel)
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm i -g vercel
+      - name: Deploy
+        working-directory: web
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+          else
+            vercel deploy --yes --token "$VERCEL_TOKEN"
+          fi
