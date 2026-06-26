@@ -87,6 +87,7 @@ class _Endpoint:
     base_url: str
     api_key: str
     headers: dict[str, str]
+    label: str = "Local LLM"  # used in error messages so failures name the right provider
 
 
 def _resolve_endpoint(model_id: str | None) -> _Endpoint:
@@ -110,8 +111,22 @@ def _resolve_endpoint(model_id: str | None) -> _Endpoint:
                     "HTTP-Referer": settings.openrouter_site_url,
                     "X-Title": settings.openrouter_app_name,
                 },
+                label="OpenRouter",
             )
     return _Endpoint(base_url=_base_url(), api_key=_api_key(), headers={})
+
+
+def _http_error(endpoint: _Endpoint, status: int, body: str) -> RuntimeError:
+    """A provider-attributed error. OpenRouter 402 = out of credits / no payment;
+    surface that plainly instead of a generic 'Local LLM' failure."""
+    detail = (body or "").strip()[:200]
+    if endpoint.label == "OpenRouter" and status == 402:
+        return RuntimeError(
+            "OpenRouter 402 (Payment Required): this account is out of credits or "
+            "has no payment method for the selected model. Add credits at "
+            f"openrouter.ai/credits, or pick a local model. {detail}"
+        )
+    return RuntimeError(f"{endpoint.label} {status}: {detail}")
 
 
 async def chat(
@@ -154,7 +169,7 @@ async def chat(
         res = await request
 
     if res.status_code >= 400:
-        raise RuntimeError(f"Local LLM {res.status_code}: {res.text[:200]}")
+        raise _http_error(endpoint, res.status_code, res.text)
     data = res.json()
     choice = (data.get("choices") or [{}])[0]
     usage = data.get("usage") or {}
@@ -277,7 +292,7 @@ async def chat_stream(
         async with client.stream("POST", f"{endpoint.base_url}/chat/completions", json=payload, headers=headers) as res:
             if res.status_code >= 400:
                 body = await res.aread()
-                raise RuntimeError(f"Local LLM {res.status_code}: {body[:200]!r}")
+                raise _http_error(endpoint, res.status_code, body.decode("utf-8", "replace"))
             async for line in res.aiter_lines():
                 if abort is not None and abort.is_set():
                     raise LLMAborted("run stopped during inference")

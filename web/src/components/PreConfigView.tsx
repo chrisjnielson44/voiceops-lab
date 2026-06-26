@@ -175,7 +175,7 @@ export function PreConfigView({
                 <Card
                   className={cn(
                     "flex h-full flex-col gap-2 p-4 transition-all",
-                    selected ? "ring-2 ring-brand-500 ring-offset-2 ring-offset-background" : "hover:border-foreground/20",
+                    selected ? "border-brand-500 ring-2 ring-brand-500 ring-offset-1 ring-offset-background dark:bg-brand-500/10" : "hover:border-foreground/20",
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -322,7 +322,7 @@ function TransportCard({ active, onClick, icon, title, desc }: { active: boolean
       <Card
         className={cn(
           "flex h-full items-start gap-3 p-4 transition-all",
-          active ? "ring-2 ring-brand-500 ring-offset-2 ring-offset-background" : "hover:border-foreground/20",
+          active ? "border-brand-500 ring-2 ring-brand-500 ring-offset-1 ring-offset-background dark:bg-brand-500/10" : "hover:border-foreground/20",
         )}
       >
         <span className={cn("mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg", active ? "bg-brand-500/15 text-brand-600 dark:text-brand-300" : "bg-secondary text-muted-foreground")}>

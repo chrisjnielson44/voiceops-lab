@@ -34,6 +34,10 @@ def _responder(query: str, params):
         ]
     if "FROM call_runs WHERE id" in q:  # get_call -> run
         if params and params[0] == "voice_abc":
+            # Per-user scoping: a 2nd param is the caller's user_id. The run is
+            # owned by "user-1"; anyone else gets no row (-> 404, no leak).
+            if len(params) > 1 and params[1] != "user-1":
+                return []
             return [
                 {
                     "id": "voice_abc",
@@ -105,3 +109,37 @@ async def test_get_call_detail(client, calls_pool):
 async def test_get_call_404(client, calls_pool):
     r = await client.get("/api/calls/does-not-exist")
     assert r.status_code == 404
+
+
+def _non_admin_session(monkeypatch, user_id: str):
+    """Force the auth boundary to resolve a non-admin session for `user_id`."""
+    from app.routers import _deps
+
+    async def fake_session(request):
+        return {"id": user_id, "role": "user"}
+
+    monkeypatch.setattr(_deps, "_session_user", fake_session)
+
+
+async def test_list_calls_scoped_for_non_admin(client, calls_pool, monkeypatch):
+    _non_admin_session(monkeypatch, "user-2")
+    r = await client.get("/api/calls")
+    assert r.status_code == 200
+    # The emitted SQL must filter by user_id and bind the caller as a param.
+    sql, params = calls_pool.executed[-1]
+    assert "user_id" in " ".join(sql.split())
+    assert "user-2" in params
+
+
+async def test_get_call_isolated_from_other_user(client, calls_pool, monkeypatch):
+    # voice_abc is owned by user-1; user-2 must not be able to read it.
+    _non_admin_session(monkeypatch, "user-2")
+    r = await client.get("/api/calls/voice_abc")
+    assert r.status_code == 404
+
+
+async def test_get_call_visible_to_owner(client, calls_pool, monkeypatch):
+    _non_admin_session(monkeypatch, "user-1")
+    r = await client.get("/api/calls/voice_abc")
+    assert r.status_code == 200
+    assert r.json()["run"]["id"] == "voice_abc"
