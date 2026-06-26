@@ -1,12 +1,12 @@
 // Render docs/*.svg → docs/*.png at 2× via headless Chromium (uses the repo's
 // installed Playwright, same as shots.mjs). Usage: node web/scripts/render-diagram.mjs
 import { chromium } from "playwright";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const targets = ["architecture"]; // basenames under docs/
+const targets = ["architecture", "call-flow", "context-graph", "packs", "audit-chain"]; // basenames under docs/
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ deviceScaleFactor: 2 });
