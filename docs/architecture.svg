@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="940" viewBox="0 0 1240 940" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="1240" height="940" fill="#ffffff"/>
+  <rect x="0" y="0" width="1240" height="6" fill="#7c3aed"/>
+
+  <!-- title -->
+  <text x="42" y="54" font-size="26" font-weight="700"><tspan fill="#7c3aed">VoiceLabs</tspan><tspan fill="#0f172a"> — architecture</tspan></text>
+  <text x="44" y="78" font-size="13.5" fill="#64748b">Three services, one origin — the browser only ever talks to the SPA.</text>
+
+  <!-- Browser -->
+  <rect x="470" y="104" width="300" height="52" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="136" text-anchor="middle" font-size="15"><tspan font-weight="700" fill="#0f172a">Browser</tspan><tspan fill="#64748b"> · single origin</tspan></text>
+  <line x1="620" y1="156" x2="620" y2="186" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- SPA -->
+  <rect x="350" y="188" width="540" height="112" rx="14" fill="#eef2ff" stroke="#818cf8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="224" text-anchor="middle" font-size="17" font-weight="700" fill="#0f172a">Vite / React SPA</text>
+  <text x="620" y="246" text-anchor="middle" font-size="12.5" fill="#64748b">Vercel in production — the only origin the browser loads</text>
+  <rect x="418" y="262" width="196" height="26" rx="13" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1"/>
+  <text x="516" y="279" text-anchor="middle" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">/api/auth/* → auth</text>
+  <rect x="626" y="262" width="196" height="26" rx="13" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1"/>
+  <text x="724" y="279" text-anchor="middle" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">/api/* → backend</text>
+
+  <!-- SPA split arrows -->
+  <path d="M500,300 C440,322 400,322 360,342" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="436" y="338" text-anchor="middle" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">/api/*</text>
+  <path d="M740,300 C800,322 840,322 880,342" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="804" y="338" text-anchor="middle" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">/api/auth/*</text>
+
+  <!-- Backend -->
+  <rect x="120" y="344" width="440" height="150" rx="14" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="340" y="380" text-anchor="middle" font-size="16.5" font-weight="700" fill="#0f172a">FastAPI call runtime</text>
+  <text x="340" y="400" text-anchor="middle" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#7c3aed">voiceops-api</text>
+  <text x="340" y="427" text-anchor="middle" font-size="12.5" fill="#334155">agent · context graph · prediction</text>
+  <text x="340" y="447" text-anchor="middle" font-size="12.5" fill="#334155">SSE stream · analytics · audit ledger</text>
+  <text x="340" y="472" text-anchor="middle" font-size="11" font-style="italic" fill="#64748b">validates the session cookie · fails closed</text>
+
+  <!-- Auth -->
+  <rect x="680" y="344" width="440" height="150" rx="14" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="900" y="380" text-anchor="middle" font-size="16.5" font-weight="700" fill="#0f172a">Better Auth host</text>
+  <text x="900" y="400" text-anchor="middle" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#059669">voiceops-auth</text>
+  <text x="900" y="427" text-anchor="middle" font-size="12.5" fill="#334155">email / password sessions</text>
+  <text x="900" y="447" text-anchor="middle" font-size="12.5" fill="#334155">admin + organization / teams</text>
+  <text x="900" y="472" text-anchor="middle" font-size="11" font-style="italic" fill="#64748b">public sign-up disabled · admin-only</text>
+
+  <!-- Backend <-> Auth -->
+  <text x="620" y="400" text-anchor="middle" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">introspect cookie</text>
+  <line x1="560" y1="414" x2="676" y2="414" stroke="#64748b" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+
+  <!-- Backend / Auth -> Neon -->
+  <path d="M340,494 C360,520 400,532 436,554" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <path d="M900,494 C880,520 840,532 804,554" fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Neon -->
+  <rect x="310" y="556" width="620" height="92" rx="14" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="620" y="590" text-anchor="middle" font-size="16.5" font-weight="700" fill="#0f172a">Neon Postgres</text>
+  <text x="620" y="614" text-anchor="middle" font-size="12" fill="#334155">app · call_runs (event_stream JSONB) · call_events (hash-chained audit)</text>
+  <text x="620" y="634" text-anchor="middle" font-size="12" fill="#334155">auth · user · session · organization · team …</text>
+
+  <!-- machine-to-machine dashed connector (live band -> backend) -->
+  <path d="M180,700 L180,496" fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="192" y="596" font-size="10" fill="#94a3b8">machine-to-machine</text>
+  <text x="192" y="610" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#94a3b8">x-internal-token</text>
+
+  <!-- Live voice band -->
+  <rect x="80" y="700" width="1080" height="128" rx="14" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="104" y="732" font-size="14" font-weight="700" fill="#b45309">Live voice — out-of-process (optional)</text>
+  <text x="620" y="768" text-anchor="middle" font-size="12" fill="#334155">LiveKit worker (ElevenLabs STT → LLM → TTS, Silero VAD)  →  POST /api/agent/ingest · /api/agent/context  →  LiveBridge re-runs the same enrichment  →  run store  →  SSE</text>
+  <text x="620" y="794" text-anchor="middle" font-size="11" fill="#92702a">worker writes the durable call_events audit chain · bridge writes only event_stream + probabilities (no write race)</text>
+
+  <!-- footer -->
+  <text x="620" y="874" text-anchor="middle" font-size="12" fill="#64748b">Providers: model id → demo · OpenRouter (hosted) · MLX / Ollama (local) — route_chat falls back to the deterministic demo engine.</text>
+</svg>

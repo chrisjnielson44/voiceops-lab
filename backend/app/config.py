@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # the agent's (reasoning) model isn't on the critical path more than once per
     # turn. Falls back to the agent model when empty.
     local_llm_fast_model: str = ""
+    # Preferred default model the picker selects when the explicitly-configured
+    # local model isn't available (e.g. a hosted-only deployment). Cheap + fast so
+    # reviewers don't accidentally default to a premium model. Empty = no preference.
+    default_model_id: str = "openai/gpt-4o-mini"
 
     # --- Optional hosted routing --------------------------------------------
     openrouter_api_key: str | None = None

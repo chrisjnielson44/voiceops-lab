@@ -103,7 +103,7 @@ async def _runnable_models() -> list[dict]:
     out: list[dict] = await _local_models()
     if (settings.openrouter_api_key or "").strip():
         out.extend(
-            {"id": m.id, "label": m.label, "kind": "hosted", "reasoning": False}
+            {"id": m.id, "label": m.label, "kind": "hosted", "reasoning": m.reasoning}
             for m in MODELS
             if m.provider_id == "openrouter"
         )
@@ -111,11 +111,16 @@ async def _runnable_models() -> list[dict]:
 
 
 def _default_model(models: list[dict]) -> str:
-    """Default the picker to the configured agent model when present, else the
-    first reasoning model, else the first available model."""
+    """Default the picker to the explicitly-configured agent model when present
+    (local dev), else the preferred default (cheap/fast — gpt-4o-mini — so a
+    hosted-only deployment doesn't land on a premium model), else the first
+    reasoning model, else the first available model."""
     ids = [m["id"] for m in models]
     if settings.local_llm_model in ids:
         return settings.local_llm_model
+    preferred = (settings.default_model_id or "").strip()
+    if preferred and preferred in ids:
+        return preferred
     for m in models:
         if m.get("reasoning"):
             return m["id"]
@@ -134,6 +139,11 @@ def _fast_model(models: list[dict]) -> str:
     for m in models:
         if m.get("kind") == "local" and not m.get("reasoning"):
             return m["id"]
+    # Prefer the cheap/fast configured default before falling to the first hosted
+    # model (which would otherwise be the premium model at the top of the catalog).
+    preferred = (settings.default_model_id or "").strip()
+    if preferred and preferred in ids:
+        return preferred
     for m in models:
         if not m.get("reasoning"):
             return m["id"]

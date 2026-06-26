@@ -7,6 +7,7 @@ import path from "node:path";
 import pg from "pg";
 import { betterAuth } from "better-auth";
 import { admin, organization } from "better-auth/plugins";
+import { dash } from "@better-auth/infra";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -80,5 +81,18 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: false,
       teams: { enabled: true, defaultTeam: { enabled: false } },
     }),
+    // Better Auth Infrastructure dashboard — streams sign-ins / sessions /
+    // user events / audit logs to the hosted monitoring dashboard. Enabled ONLY
+    // when the Infrastructure credentials are set, so the auth server runs
+    // unchanged (dev / tests / pre-account deploys) until you wire the account.
+    ...(process.env.BETTER_AUTH_API_KEY && process.env.BETTER_AUTH_API_URL && process.env.BETTER_AUTH_KV_URL
+      ? [
+          dash({
+            apiUrl: process.env.BETTER_AUTH_API_URL,
+            kvUrl: process.env.BETTER_AUTH_KV_URL,
+            apiKey: process.env.BETTER_AUTH_API_KEY,
+          }),
+        ]
+      : []),
   ],
 });

@@ -4,6 +4,32 @@ from __future__ import annotations
 import app.llm.local_llm as local_llm
 from app.config import settings
 from app.providers.registry import MODELS
+from app.routers.voice import _default_model, _fast_model
+
+
+def test_default_model_prefers_gpt4o_mini_on_hosted_only_deploy():
+    # Prod has no local server, so only hosted models are runnable. The picker
+    # must default to the cheap/fast preferred model, NOT the first (premium) one.
+    hosted = [
+        {"id": "anthropic/claude-sonnet-4.6", "reasoning": False, "kind": "hosted"},
+        {"id": "openai/gpt-4o-mini", "reasoning": False, "kind": "hosted"},
+        {"id": "google/gemini-2.5-flash", "reasoning": False, "kind": "hosted"},
+    ]
+    assert settings.default_model_id == "openai/gpt-4o-mini"
+    assert _default_model(hosted) == "openai/gpt-4o-mini"
+    assert _fast_model(hosted) == "openai/gpt-4o-mini"
+
+
+def test_default_model_respects_explicit_local_model(monkeypatch):
+    # In local dev an explicitly-configured local model still wins over the
+    # preferred hosted default.
+    monkeypatch.setattr(settings, "local_llm_model", "qwen3:14b")
+    local = [
+        {"id": "qwen3:14b", "reasoning": True, "kind": "local"},
+        {"id": "llama3.1:8b", "reasoning": False, "kind": "local"},
+    ]
+    assert _default_model(local) == "qwen3:14b"
+    assert _fast_model(local) == "llama3.1:8b"
 
 
 def test_registry_has_curated_cheap_fast_openrouter_models():
@@ -22,6 +48,20 @@ def test_registry_has_curated_cheap_fast_openrouter_models():
         if m.provider_id == "openrouter":
             assert m.kind == "hosted"
             assert m.input_cost_per_1k >= 0 and m.output_cost_per_1k >= 0
+
+
+def test_deepseek_r1_is_the_reasoning_hosted_option():
+    # R1 streams a chain-of-thought (OpenRouter returns `reasoning` natively), so
+    # it's the hosted pick for watching the agent think. V3 (chat) does NOT reason.
+    r1 = next((m for m in MODELS if m.id == "deepseek/deepseek-r1"), None)
+    assert r1 is not None, "DeepSeek R1 missing from the catalog"
+    assert r1.provider_id == "openrouter" and r1.kind == "hosted"
+    assert r1.reasoning is True
+    v3 = next(m for m in MODELS if m.id == "deepseek/deepseek-chat")
+    assert v3.reasoning is False
+    # Non-reasoning hosted models (the ones a user might pick and see no CoT) stay false.
+    for mid in ("openai/gpt-4o-mini", "anthropic/claude-haiku-4.5"):
+        assert next(m for m in MODELS if m.id == mid).reasoning is False
 
 
 def test_hosted_model_routes_to_openrouter_when_key_set(monkeypatch):
