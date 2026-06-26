@@ -36,11 +36,11 @@ flyctl secrets set --app voiceops-auth \
   BETTER_AUTH_TRUSTED_ORIGINS="https://<your-vercel-domain>" \
   AUTH_CORS_ORIGINS="https://<your-vercel-domain>"
 # OPTIONAL — Better Auth Infrastructure monitoring dashboard (sign-ins, sessions,
-# audit logs). The `dash()` plugin only activates when ALL THREE are set; without
-# them the auth server runs exactly as before. Get these from your Better Auth
-# Infrastructure account (better-auth.com → Infrastructure):
-#   flyctl secrets set --app voiceops-auth \
-#     BETTER_AUTH_API_URL="https://..." BETTER_AUTH_KV_URL="https://..." BETTER_AUTH_API_KEY="..."
+# audit logs). The `dash()` plugin activates as soon as BETTER_AUTH_API_KEY is set
+# (the dashboard's setup wizard issues just that key); without it the auth server
+# runs exactly as before. API_URL/KV_URL are optional overrides. Redeploy after
+# setting it so the dashboard's ownership check can reach the live /api/auth.
+#   flyctl secrets set --app voiceops-auth BETTER_AUTH_API_KEY="..."   # better-auth.com → Infrastructure
 flyctl deploy --app voiceops-auth
 flyctl ssh console --app voiceops-auth -C "node migrate.mjs"     # once — creates org/team/role tables (+ any dash schema)
 flyctl ssh console --app voiceops-auth -C "ADMIN_PASSWORD='choose-a-strong-one' node seed-admin.mjs"  # once

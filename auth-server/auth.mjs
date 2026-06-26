@@ -82,15 +82,16 @@ export const auth = betterAuth({
       teams: { enabled: true, defaultTeam: { enabled: false } },
     }),
     // Better Auth Infrastructure dashboard — streams sign-ins / sessions /
-    // user events / audit logs to the hosted monitoring dashboard. Enabled ONLY
-    // when the Infrastructure credentials are set, so the auth server runs
-    // unchanged (dev / tests / pre-account deploys) until you wire the account.
-    ...(process.env.BETTER_AUTH_API_KEY && process.env.BETTER_AUTH_API_URL && process.env.BETTER_AUTH_KV_URL
+    // user events / audit logs to the hosted monitoring dashboard. Activates as
+    // soon as BETTER_AUTH_API_KEY is set (the dashboard's setup wizard issues just
+    // that); apiUrl/kvUrl are optional overrides the plugin defaults to its hosted
+    // endpoints. Without the key the auth server runs exactly as before.
+    ...(process.env.BETTER_AUTH_API_KEY
       ? [
           dash({
-            apiUrl: process.env.BETTER_AUTH_API_URL,
-            kvUrl: process.env.BETTER_AUTH_KV_URL,
             apiKey: process.env.BETTER_AUTH_API_KEY,
+            ...(process.env.BETTER_AUTH_API_URL ? { apiUrl: process.env.BETTER_AUTH_API_URL } : {}),
+            ...(process.env.BETTER_AUTH_KV_URL ? { kvUrl: process.env.BETTER_AUTH_KV_URL } : {}),
           }),
         ]
       : []),
