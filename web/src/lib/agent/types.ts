@@ -1,5 +1,6 @@
 import type { AuditEvent } from "@/lib/audit/types";
 import type { CallStatus, PredictionSnapshot, Speaker } from "@/lib/simulation/types";
+import type { PredictionSet, PrefetchRecord, Subgraph } from "@/lib/graph/types";
 
 export interface LiveTurn {
   id: string;
@@ -20,6 +21,9 @@ export interface LiveTool {
   latencyMs: number;
   phi: boolean;
   atMs: number;
+  /** Set when this tool's result was served from the speculative prefetch cache. */
+  prefetchHit?: boolean;
+  savedMs?: number;
 }
 
 export interface RunMetrics {
@@ -32,12 +36,38 @@ export interface RunMetrics {
   avgLatencyMs: number;
 }
 
+/** One phase of an agent turn's reasoning trace. */
+export interface ReasoningSegment {
+  phase: "retrieve" | "think" | "anticipate";
+  title: string;
+  text: string;
+  /** retrieve: the lit context-graph nodes walked, ordered by hops. */
+  nodes?: { id: string; type: string; label: string; hops: number; seed: boolean }[];
+  /** anticipate: the weighed prediction candidates. */
+  predictions?: { intent: string; utterance: string; confidence: number; needsTool?: string | null; warmed: boolean }[];
+}
+
+/** The reasoning trace shown inline above an agent turn. Streamed: upsert by id. */
+export interface LiveReasoning {
+  id: string;
+  seq: number;
+  atMs: number;
+  model?: string | null;
+  segments: ReasoningSegment[];
+  streaming?: boolean;
+  durationMs?: number | null;
+}
+
 /** Discriminated event stream pushed over SSE. */
 export type AgentEvent =
   | { kind: "status"; status: CallStatus; phase: number; elapsedMs: number }
   | { kind: "turn"; turn: LiveTurn }
   | { kind: "tool"; tool: LiveTool }
+  | { kind: "reasoning"; reasoning: LiveReasoning }
   | { kind: "prediction"; prediction: PredictionSnapshot }
+  | { kind: "predictionSet"; predictionSet: PredictionSet }
+  | { kind: "prefetch"; record: PrefetchRecord }
+  | { kind: "graph"; subgraph: Subgraph }
   | { kind: "audit"; event: AuditEvent }
   | { kind: "metrics"; metrics: RunMetrics }
   | { kind: "error"; message: string }

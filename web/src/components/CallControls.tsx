@@ -15,10 +15,10 @@ import {
 import { motion } from "framer-motion";
 import { fadeUp, staggerContainer } from "@/components/ui/motion";
 import { useCallStore } from "@/state/useCallStore";
-import { getScenario } from "@/lib/simulation/scenarios";
+import { useScenario } from "@/state/useScenario";
 import { PHASES } from "@/lib/simulation/engine";
 import type { CallStatus } from "@/lib/simulation/types";
-import { Panel } from "@/components/ui/Panel";
+import { Card } from "@/components/ui/card";
 import { StatusChip, type Tone } from "@/components/ui/StatusChip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
@@ -90,7 +90,10 @@ export function CallControls() {
   const resume = useCallStore((s) => s.resume);
   const stop = useCallStore((s) => s.stop);
 
-  const scenario = getScenario(scenarioId);
+  const { data: scenario } = useScenario(scenarioId);
+  const patient = scenario?.patient;
+  const claim = scenario?.claim;
+  const provider = scenario?.provider;
   const meta = STATUS_META[status];
   const running = status === "active" || status === "dialing";
   const elapsedMs = useElapsedMs(startedWallMs, status);
@@ -99,13 +102,13 @@ export function CallControls() {
   const primaryLabel = running ? "Pause" : status === "paused" ? "Resume" : "Start call";
 
   return (
-    <Panel className="overflow-hidden">
+    <Card className="flex flex-col overflow-hidden">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3.5">
         <CallOrb active={status === "active"} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold text-foreground">{scenario.payer}</div>
+          <div className="truncate text-sm font-semibold text-foreground">{scenario?.payer ?? "—"}</div>
           <div className="text-xs text-muted-foreground">
-            {scenario.payerId} · {scenario.category.replace("-", " ")}
+            {scenario?.payerId ?? "—"} · {(scenario?.category ?? "").replace("-", " ")}
           </div>
         </div>
         <StatusChip tone={meta.tone} dot pulse={meta.pulse}>
@@ -190,13 +193,13 @@ export function CallControls() {
             <Lock className="h-3 w-3" /> PHI
           </StatusChip>
         </div>
-        <Field label="Patient" value={scenario.patient.name} />
-        <Field label="Member ID" value={scenario.patient.memberId} mono />
-        <Field label="DOB" value={scenario.patient.dob} mono />
-        {scenario.claim && (
+        <Field label="Patient" value={patient?.name ?? "—"} />
+        <Field label="Member ID" value={patient?.memberId ?? "—"} mono />
+        <Field label="DOB" value={patient?.dob ?? "—"} mono />
+        {claim && (
           <>
-            <Field label="Claim / Auth" value={scenario.claim.id} mono />
-            <Field label="DOS / CPT" value={`${scenario.claim.dos} · ${scenario.claim.cpt}`} mono />
+            <Field label="Claim / Auth" value={claim.id} mono />
+            <Field label="DOS / CPT" value={`${claim.dos} · ${claim.cpt}`} mono />
           </>
         )}
       </div>
@@ -206,8 +209,8 @@ export function CallControls() {
           <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Provider</span>
         </div>
-        <Field label="Practice" value={scenario.provider.name} />
-        <Field label="NPI" value={scenario.provider.npi} mono />
+        <Field label="Practice" value={provider?.name ?? "—"} />
+        <Field label="NPI" value={provider?.npi ?? "—"} mono />
       </div>
 
       <div className="border-t border-border px-4 py-3">
@@ -215,8 +218,8 @@ export function CallControls() {
           <FileText className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Objective</span>
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">{scenario.objective}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{scenario?.objective ?? "—"}</p>
       </div>
-    </Panel>
+    </Card>
   );
 }

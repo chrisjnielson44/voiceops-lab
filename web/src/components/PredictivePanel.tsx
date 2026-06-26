@@ -8,15 +8,28 @@ import {
   TriangleAlert,
   CircleCheck,
   Brain,
+  Zap,
+  Loader2,
+  Target,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallStore } from "@/state/useCallStore";
-import { getScenario } from "@/lib/simulation/scenarios";
-import { Panel, PanelHeader } from "@/components/ui/Panel";
-import { Gauge, ProgressBar } from "@/components/ui/Meter";
-import { StatusChip } from "@/components/ui/StatusChip";
+import { useScenario } from "@/state/useScenario";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Gauge } from "@/components/ui/Meter";
+import { Progress } from "@/components/ui/progress";
+import { StatusChip, type Tone } from "@/components/ui/StatusChip";
+import type { PrefetchRecord } from "@/lib/graph/types";
 import { cn } from "@/lib/cn";
 import { formatClock, formatPercent } from "@/lib/format";
+
+function prefetchTone(status: PrefetchRecord["status"]): { tone: Tone; label: string } {
+  if (status === "hit") return { tone: "green", label: "hit" };
+  if (status === "ready") return { tone: "blue", label: "ready" };
+  if (status === "prefetching") return { tone: "amber", label: "warming" };
+  if (status === "evicted") return { tone: "slate", label: "served" };
+  return { tone: "slate", label: status };
+}
 
 function riskTone(risk: number): { hex: string; tone: "green" | "amber" | "red" } {
   if (risk >= 0.6) return { hex: "#f87171", tone: "red" };
@@ -27,27 +40,95 @@ function riskTone(risk: number): { hex: string; tone: "green" | "amber" | "red" 
 export function PredictivePanel() {
   const scenarioId = useCallStore((s) => s.scenarioId);
   const prediction = useCallStore((s) => s.prediction);
+  const predictionSet = useCallStore((s) => s.predictionSet);
+  const prefetch = useCallStore((s) => s.prefetch);
   const modelLabel = useCallStore((s) => s.modelLabel);
   const status = useCallStore((s) => s.status);
-  const scenario = getScenario(scenarioId);
+  const { data: scenario } = useScenario(scenarioId);
+  const predictions = predictionSet?.predictions ?? [];
+  const prefetchList = Object.values(prefetch);
 
-  const totalFields = scenario.requiredFields.length;
-  const missing = prediction?.missingFields ?? scenario.requiredFields;
+  const requiredFields = scenario?.requiredFields ?? [];
+  const totalFields = requiredFields.length;
+  const missing = prediction?.missingFields ?? requiredFields;
   const capturedCount = Math.max(0, totalFields - missing.length);
   const completion = prediction?.completionProbability ?? 0;
   const escalation = prediction?.escalationRisk ?? 0;
   const risk = riskTone(escalation);
 
   return (
-    <Panel className="h-full">
-      <PanelHeader
-        title="Predictive sidecar"
-        icon={<Sparkles className="h-4 w-4" />}
-        subtitle="Forecasts inferred live by the local model"
-        right={<StatusChip tone="violet">{modelLabel}</StatusChip>}
-      />
+    <Card className="flex flex-col h-full">
+      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-muted-foreground"><Sparkles className="h-4 w-4" /></span>
+          <div className="min-w-0">
+            <CardTitle className="truncate">Predictive sidecar</CardTitle>
+            <p className="truncate text-xs text-muted-foreground">Forecasts inferred live by the local model</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {predictionSet && (predictionSet.hitRate > 0 || prefetchList.length > 0) && (
+            <StatusChip tone="green" dot>{formatPercent(predictionSet.hitRate)} hit</StatusChip>
+          )}
+          <StatusChip tone="violet">{modelLabel}</StatusChip>
+        </div>
+      </CardHeader>
 
       <div className="scroll-thin flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {/* Anticipatory predictions + speculative prefetch */}
+        {predictions.length > 0 && (
+          <div className="glass-inset rounded-2xl p-3">
+            <div className="mb-2 flex items-center gap-1.5">
+              <Target className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-semibold text-foreground">Anticipated next turns</span>
+              {predictionSet && (
+                <span className="ml-auto tabular text-[11px] text-muted-foreground">
+                  hit {formatPercent(predictionSet.hitRate)} · saved {predictionSet.avgSavedMs}ms
+                </span>
+              )}
+            </div>
+            <ul className="space-y-2">
+              <AnimatePresence initial={false}>
+                {predictions.map((p, i) => (
+                  <motion.li
+                    key={p.intent + i}
+                    layout
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className={cn("rounded-xl border border-border bg-card/40 px-2.5 py-2", i > 0 && "opacity-80")}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-md bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">{p.intent}</span>
+                      {p.needsTool && <span className="truncate text-[10px] text-muted-foreground">→ {p.needsTool}</span>}
+                      <span className="ml-auto tabular text-[10px] text-muted-foreground">{formatPercent(p.confidence)}</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-snug text-muted-foreground">“{p.utterance}”</p>
+                    <Progress value={p.confidence * 100} className="mt-1.5 h-1" indicatorClassName="bg-brand-500" />
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+            {prefetchList.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">prefetch</span>
+                {prefetchList.map((r) => {
+                  const t = prefetchTone(r.status);
+                  return (
+                    <StatusChip key={r.key} tone={t.tone} dot={r.status === "ready" || r.status === "hit"}>
+                      {r.status === "prefetching" && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {r.status === "hit" && <Zap className="h-3 w-3" />}
+                      {r.label ?? "tool"} · {t.label}
+                      {r.savedMs && r.status === "hit" ? ` ${r.savedMs}ms` : ""}
+                    </StatusChip>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {!prediction && (
           <div className="glass-inset rounded-2xl px-3 py-2 text-xs text-muted-foreground">
             {status === "idle"
@@ -104,7 +185,7 @@ export function PredictivePanel() {
             “{prediction?.nextPayerResponse ?? "Waiting for the call to begin."}”
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <ProgressBar value={prediction?.nextResponseConfidence ?? 0} color="bg-brand-500" className="h-1.5" />
+            <Progress value={(prediction?.nextResponseConfidence ?? 0) * 100} className="h-1.5" indicatorClassName="bg-brand-500" />
             <span className="tabular shrink-0 text-[11px] text-muted-foreground">
               {formatPercent(prediction?.nextResponseConfidence ?? 0)} conf.
             </span>
@@ -119,7 +200,7 @@ export function PredictivePanel() {
               {capturedCount}/{totalFields} captured
             </span>
           </div>
-          <ProgressBar value={totalFields ? capturedCount / totalFields : 0} color="bg-emerald-500" className="mb-2 h-1.5" />
+          <Progress value={(totalFields ? capturedCount / totalFields : 0) * 100} className="mb-2 h-1.5" indicatorClassName="bg-emerald-500" />
           {missing.length === 0 ? (
             <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
               <CircleCheck className="h-4 w-4" /> All required fields captured
@@ -192,6 +273,6 @@ export function PredictivePanel() {
           </p>
         </div>
       </div>
-    </Panel>
+    </Card>
   );
 }

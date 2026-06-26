@@ -12,25 +12,27 @@ import json
 from typing import Any
 
 from app.agent import run_store
-from app.agent.personas import (
-    agent_system_prompt,
-    load_ground_truth,
-    payer_system_prompt,
-    predictor_system_prompt,
+from app.agent.prediction import (
+    CONFIDENCE_PREFETCH,
+    PREFETCH_TOP,
+    normalize_prediction_set,
+    prefetch_key,
+    stats_summary,
 )
+from app.agent.reasoning import narrate_graph, narrate_predictions, narrate_think
 from app.agent.run_store import RunState, emit
-from app.agent.tools import ToolContext, execute_tool
+from app.agent.tools import ToolResult
 from app.audit.ledger import audit_canonical
 from app.config import settings
 from app.core.format import clamp, format_time_of_day, now_ms
 from app.core.hash import GENESIS_HASH, chain_hash
 from app.db import query
-from app.llm.local_llm import LLMAborted, chat_json, local_model_id
+from app.llm.local_llm import LLMAborted, chat_json, chat_stream, local_model_id
+from app.packs.registry import get_scenario, pack_for_scenario
 from app.schemas import agent as ev
-from app.schemas.agent import LiveTool, LiveTurn, RunMetrics
+from app.schemas.agent import LiveReasoning, LiveTool, LiveTurn, PrefetchRecord, RunMetrics, Subgraph
 from app.schemas.audit import AuditEvent
 from app.schemas.simulation import PredictionSnapshot, Scenario
-from app.simulation.scenarios import get_scenario
 
 MAX_STEPS = 16
 PROMPT_VERSION = settings.voiceops_prompt_version
@@ -38,7 +40,22 @@ PROMPT_VERSION = settings.voiceops_prompt_version
 
 async def run_orchestrator(run: RunState) -> None:
     scenario = get_scenario(run.scenario_id)
+    pack = pack_for_scenario(scenario.id)
     t0 = run.started_at
+
+    # Per-role models: the agent runs on the selected (reasoning) model so we can
+    # surface its chain-of-thought; the payer + predictor run on a faster model
+    # (when configured) so they don't add the reasoning model's latency twice per
+    # turn. Both fall back to the agent model.
+    agent_model = run.model or local_model_id()
+    fast_model = (settings.local_llm_fast_model or "").strip() or agent_model
+
+    # Build the per-run context graph once, off the turn critical path. Pure
+    # SQL/Python — works even when the local models are offline.
+    try:
+        run.graph = await pack.build_graph(scenario)
+    except Exception:  # noqa: BLE001 - never block the call on graph build
+        run.graph = None
 
     def now() -> int:
         return round(now_ms() - t0)
@@ -128,7 +145,177 @@ async def run_orchestrator(run: RunState) -> None:
         while run.paused and not run.stopped:
             await asyncio.sleep(0.2)
 
-    agent_msgs: list[dict] = [{"role": "system", "content": agent_system_prompt(scenario)}]
+    def retrieve_context():
+        """Per-turn graph retrieval. Emits a graph event only when the lit
+        subgraph changes; returns (serialized context, subgraph) — the subgraph
+        is reused to narrate the traversal in the reasoning trace."""
+        if run.graph is None:
+            return "", None
+        missing = last_prediction.missing_fields if last_prediction else list(scenario.required_fields)
+        subgraph, ctx_str = run.graph.retrieve(transcript_text[-3000:], missing_fields=missing, intent=scenario.category)
+
+        # GROW the displayed graph from what the CONVERSATION has actually
+        # surfaced: focus entities + any node mentioned in the transcript (a
+        # seed), accumulated across turns. The agent is still grounded on the
+        # broader BFS slice (the reasoning narration shows that full walk), but
+        # the graph viz starts small and expands as entities come up on the call.
+        member_node = f"member:{scenario.patient.member_id}"
+        current_seeds = {n.id for n in subgraph.nodes if n.seed}
+        run.discovered |= current_seeds
+        run.discovered.add(member_node)
+        disc_nodes = [n for n in subgraph.nodes if n.id in run.discovered]
+        disc_ids = {n.id for n in disc_nodes}
+        disc_edges = [e for e in subgraph.edges if e.source in disc_ids and e.target in disc_ids]
+        grown = Subgraph(
+            nodes=disc_nodes,
+            edges=disc_edges,
+            seeds=list(current_seeds & disc_ids),
+            context=subgraph.context,
+            hops=subgraph.hops,
+        )
+
+        sig = "g:" + ",".join(sorted(disc_ids)) + "|l:" + ",".join(sorted(n.id for n in disc_nodes if n.lit))
+        if disc_nodes and sig != run.last_lit_sig:
+            run.last_lit_sig = sig
+            emit(run, ev.graph_event(grown))
+            phi = any(n.type in ("member", "coverage", "claim", "auth") for n in disc_nodes if n.lit)
+            push_audit(
+                type="context.retrieve",
+                actor="system",
+                summary=f"Context graph now spans {len(disc_ids)} discovered record(s) as the call surfaces them.",
+                phi=phi,
+                phi_scope=pack.sensitive_scope(scenario) if phi else None,
+                redaction="tokenized" if phi else "none",
+            )
+        # Narration uses the FULL BFS slice so the reasoning still shows the walk.
+        return ctx_str, subgraph
+
+    def warmed_intents_now() -> set[str]:
+        """Which of the last round's predicted intents had their read tool warmed
+        in the prefetch cache — used to narrate 'I prefetched this' in reasoning."""
+        warmed: set[str] = set()
+        ps = run.last_pred_set
+        if not ps:
+            return warmed
+        for p in ps.predictions:
+            mapping = pack.predicted_tool_for(p.needs_tool or p.intent, scenario)
+            if not mapping:
+                continue
+            cached = run.prefetch_cache.get(prefetch_key(*mapping))
+            if cached and cached.get("status") in ("ready", "evicted"):
+                warmed.add(p.intent)
+        return warmed
+
+    def emit_reasoning(subgraph, *, started_ms: int, think_text: str, streaming: bool, duration_ms: int | None = None) -> None:
+        """Assemble + emit the inline reasoning trace (graph walk + weighed
+        predictions + streamed chain-of-thought) for the upcoming agent turn.
+        Tagged with the seq the following turn/tool uses; the client upserts by id
+        so the trace grows live as `think_text` streams in."""
+        segments = []
+        g = narrate_graph(subgraph)
+        if g:
+            segments.append(g)
+        a = narrate_predictions(run.last_pred_set, warmed_intents_now())
+        if a:
+            segments.append(a)
+        t = narrate_think(think_text)
+        if t:
+            segments.append(t)
+        if not segments:
+            return
+        emit(run, ev.reasoning_event(LiveReasoning(
+            id=f"r-{seq}", seq=seq, at_ms=started_ms, model=agent_model,
+            segments=segments, streaming=streaming, duration_ms=duration_ms,
+        )))
+
+    async def _prefetch_predictions(ps, snapshot: str) -> None:
+        """Speculatively warm the cache for the top predicted next tools. Only
+        idempotent read tools are mapped (see Pack.predicted_tool_for)."""
+        seen: set[str] = set()
+        count = 0
+        for p in ps.predictions:
+            if count >= PREFETCH_TOP:
+                break
+            if p.confidence < CONFIDENCE_PREFETCH:
+                continue
+            mapping = pack.predicted_tool_for(p.needs_tool or p.intent, scenario)
+            if not mapping:
+                continue
+            tool_name, tool_args = mapping
+            key = prefetch_key(tool_name, tool_args)
+            cached = run.prefetch_cache.get(key)
+            if key in seen or (cached and cached.get("status") == "ready"):
+                continue
+            seen.add(key)
+            count += 1
+            emit(run, ev.prefetch_event(PrefetchRecord(key=key, kind="tool", status="prefetching", intent=p.intent, label=tool_name)))
+            try:
+                started = now()
+                res = await pack.prefetch(
+                    tool_name, tool_args,
+                    pack.tool_context(run_id=run.id, scenario=scenario, transcript=snapshot),
+                )
+                lat = now() - started
+                run.prefetch_cache[key] = {
+                    "status": "ready", "result": res.result, "status_tool": res.status,
+                    "phi": res.phi, "data": res.data, "latency_ms": lat, "intent": p.intent,
+                }
+                emit(run, ev.prefetch_event(PrefetchRecord(key=key, kind="tool", status="ready", intent=p.intent, label=tool_name, saved_ms=lat)))
+            except (LLMAborted, asyncio.CancelledError):
+                raise
+            except Exception:  # noqa: BLE001 - a failed speculation is just wasted work
+                run.pred_stats["wasted"] += 1
+
+    async def anticipate(snapshot: str) -> None:
+        """Off-critical-path: forecast the call + anticipate the next exchange,
+        then prefetch. Fire-and-forget; cancelled when superseded or stopped."""
+        nonlocal last_prediction
+        try:
+            pr = await chat_json(
+                [
+                    {"role": "system", "content": pack.predictor_system_prompt(scenario)},
+                    {"role": "user", "content": f"Transcript so far:\n{snapshot[-3000:]}"},
+                ],
+                temperature=0.2,
+                max_tokens=512,
+                model=fast_model,
+                abort=abort,
+            )
+            metrics.inferences += 1
+            latencies.append(pr.latency_ms)
+            if not isinstance(pr.value, dict):
+                return
+            last_prediction = _normalize_prediction(pr.value, scenario)
+            emit(run, ev.prediction_event(last_prediction))
+            ps = normalize_prediction_set(pr.value, scenario)
+            ps.generated_at_ms = now()
+            ps.model_ms = pr.latency_ms
+            ps.hit_rate, ps.avg_saved_ms, ps.wasted = stats_summary(run.pred_stats)
+            run.last_pred_set = ps
+            emit(run, ev.prediction_set_event(ps))
+            push_audit(
+                type="prediction.update",
+                actor="system",
+                summary=(
+                    f"Prediction — completion {last_prediction.completion_probability * 100:.0f}%, "
+                    f"escalation {last_prediction.escalation_risk * 100:.0f}%; {len(ps.predictions)} anticipated next turns."
+                ),
+                phi=False,
+                redaction="none",
+            )
+            push_metrics()
+            await _prefetch_predictions(ps, snapshot)
+        except (LLMAborted, asyncio.CancelledError):
+            return
+        except Exception:  # noqa: BLE001 - predictor is best-effort, never crash the call
+            return
+
+    def fire_anticipation() -> None:
+        if run.pred_task and not run.pred_task.done():
+            run.pred_task.cancel()
+        run.pred_task = asyncio.create_task(anticipate(transcript_text))
+
+    agent_msgs: list[dict] = [{"role": "system", "content": pack.agent_system_prompt(scenario)}]
     payer_msgs: list[dict] = []
     transcript_text = ""
     last_prediction: PredictionSnapshot | None = None
@@ -144,8 +331,8 @@ async def run_orchestrator(run: RunState) -> None:
             redaction="none",
         )
 
-        gt = await load_ground_truth(scenario)
-        payer_msgs.append({"role": "system", "content": payer_system_prompt(scenario, gt.text)})
+        gt_text = await pack.load_ground_truth(scenario)
+        payer_msgs.append({"role": "system", "content": pack.counterparty_system_prompt(scenario, gt_text)})
 
         push_audit(
             type="call.start",
@@ -158,6 +345,11 @@ async def run_orchestrator(run: RunState) -> None:
         emit(run, ev.status_event("active", 1, now()))
 
         payer_ended = False
+        # The call is a conversation: the agent must actually speak with the rep
+        # before it may record/summarize/end. The context graph grounds the agent
+        # so well it would otherwise run tools and hang up without a word.
+        had_payer_exchange = False
+        guard_nudges = 0
 
         for step in range(MAX_STEPS):
             if run.stopped:
@@ -165,24 +357,64 @@ async def run_orchestrator(run: RunState) -> None:
                 break
             await wait_while_paused()
 
-            # ---- AGENT decides an action ----
-            dec = await chat_json(
-                [
-                    *agent_msgs,
-                    {
-                        "role": "user",
-                        "content": "Begin the call. Output your first JSON action."
-                        if step == 0
-                        else "Continue. Output your next JSON action.",
-                    },
-                ],
+            # ---- CONTEXT GRAPH: retrieve grounding for this turn ----
+            ctx_str, subgraph = retrieve_context()
+            grounding: list[dict] = (
+                [{
+                    "role": "user",
+                    "content": (
+                        "CONTEXT (verified records from the payer's system of record — read-only "
+                        "grounding; you must still call tools to act and to write results back):\n" + ctx_str
+                    ),
+                }]
+                if ctx_str
+                else []
+            )
+
+            # ---- AGENT decides an action (STREAMED on the reasoning model) ----
+            # The reasoning model streams its chain-of-thought token-by-token; we
+            # emit it live (throttled) so the trace grows in real time above the
+            # turn. Generous token budget — most of it is the thinking.
+            prompt_msgs = [
+                *agent_msgs,
+                *grounding,
+                {
+                    "role": "user",
+                    "content": "Begin the call. Output your first JSON action."
+                    if step == 0
+                    else "Continue. Output your next JSON action.",
+                },
+            ]
+            started_ms = now()
+            # Show the graph walk + weighed predictions immediately (before any token).
+            emit_reasoning(subgraph, started_ms=started_ms, think_text="", streaming=True)
+            emit_state = {"len": 0}
+
+            async def on_delta(
+                reasoning_text: str,
+                _content: str,
+                *,
+                state: dict[str, int] = emit_state,
+                active_subgraph: Subgraph | None = subgraph,
+                active_started_ms: int = started_ms,
+            ) -> None:
+                if len(reasoning_text) - state["len"] >= 64:
+                    state["len"] = len(reasoning_text)
+                    emit_reasoning(active_subgraph, started_ms=active_started_ms, think_text=reasoning_text, streaming=True)
+
+            dec = await chat_stream(
+                prompt_msgs,
                 temperature=0.3,
-                max_tokens=240,
+                max_tokens=1024,
+                model=agent_model,
                 abort=abort,
+                on_delta=on_delta,
             )
             metrics.inferences += 1
             metrics.completion_tokens += dec.completion_tokens
             latencies.append(dec.latency_ms)
+            # Final reasoning frame settles the shimmer and records think time.
+            emit_reasoning(subgraph, started_ms=started_ms, think_text=dec.reasoning, streaming=False, duration_ms=now() - started_ms)
             decision = dec.value if isinstance(dec.value, dict) else None
 
             if not decision or not decision.get("action"):
@@ -195,27 +427,70 @@ async def run_orchestrator(run: RunState) -> None:
             agent_msgs.append({"role": "assistant", "content": json.dumps(decision)})
             action = decision.get("action")
 
+            # ---- CONVERSATION GUARD ----
+            # The agent may not record/summarize/end before it has actually spoken
+            # with the rep and gotten a reply. Without this it reads the grounding
+            # context and hangs up wordlessly. Bounded so it can never deadlock.
+            premature = action == "end" or (action == "tool" and decision.get("tool") in ("record_status", "summarize"))
+            if premature and not had_payer_exchange and guard_nudges < 3:
+                guard_nudges += 1
+                agent_msgs.append({
+                    "role": "user",
+                    "content": (
+                        "You have not spoken with the representative yet. This is a phone call — "
+                        "greet the rep, authenticate with your tax ID/NPI, and ask them to confirm the "
+                        "required fields out loud BEFORE recording, summarizing, or ending. Use "
+                        '{"action":"speak","text":"..."} now.'
+                    ),
+                })
+                continue
+
             if action == "tool" and decision.get("tool"):
                 started = now()
                 tool_name = decision["tool"]
                 tool_args = decision.get("args") or {}
-                res = await execute_tool(
-                    tool_name,
-                    tool_args,
-                    ToolContext(
-                        run_id=run.id,
-                        scenario_id=scenario.id,
-                        member_id=scenario.patient.member_id,
-                        claim_id=scenario.claim.id if (scenario.category == "claim-status" and scenario.claim) else None,
-                        auth_id=scenario.claim.id if (scenario.category == "prior-auth" and scenario.claim) else None,
-                        transcript=transcript_text,
-                    ),
-                )
+
+                # ---- PREFETCH HIT: serve a speculatively-warmed read from cache ----
+                key = prefetch_key(tool_name, tool_args)
+                cached = run.prefetch_cache.get(key)
+                prefetch_hit = False
+                saved_ms: int | None = None
+                if cached and cached.get("status") == "ready":
+                    res = ToolResult(
+                        result=cached["result"],
+                        status=cached["status_tool"],
+                        phi=cached["phi"],
+                        data=cached.get("data"),
+                    )
+                    prefetch_hit = True
+                    saved_ms = int(cached.get("latency_ms") or 0)
+                    cached["status"] = "evicted"
+                    run.pred_stats["hits"] += 1
+                    run.pred_stats["savedMs"] += saved_ms
+                    emit(run, ev.prefetch_event(PrefetchRecord(
+                        key=key, kind="tool", status="hit", intent=cached.get("intent"), label=tool_name, saved_ms=saved_ms,
+                    )))
+                else:
+                    res = await pack.execute_tool(
+                        tool_name,
+                        tool_args,
+                        pack.tool_context(run_id=run.id, scenario=scenario, transcript=transcript_text),
+                    )
+                    if run.pred_stats.get("misses") is not None:
+                        run.pred_stats["misses"] += 1
+
                 metrics.tool_calls += 1
                 if res.status == "error":
                     metrics.tool_errors += 1
                 if res.phi:
                     metrics.phi_accesses += 1
+
+                # Surface any tool-returned rows into the graph so later turns see them.
+                if run.graph is not None and res.data:
+                    try:
+                        run.graph.widen(tool_name.replace("verify_", "").replace("lookup_", "member"), [res.data])
+                    except Exception:  # noqa: BLE001
+                        pass
 
                 tool = LiveTool(
                     id=f"tool-{seq}",
@@ -227,11 +502,13 @@ async def run_orchestrator(run: RunState) -> None:
                     latency_ms=now() - started,
                     phi=res.phi,
                     at_ms=now(),
+                    prefetch_hit=prefetch_hit,
+                    saved_ms=saved_ms,
                 )
                 seq += 1
                 emit(run, ev.tool_event(tool))
 
-                phi_scope = f"member:***{scenario.patient.member_id[-4:]}" if res.phi else None
+                phi_scope = pack.sensitive_scope(scenario) if res.phi else None
                 push_audit(
                     type="tool.call",
                     actor="agent",
@@ -284,7 +561,7 @@ async def run_orchestrator(run: RunState) -> None:
                 break
             await wait_while_paused()
             payer_msgs.append({"role": "user", "content": text})
-            pr = await chat_json(payer_msgs, temperature=0.45, max_tokens=180, abort=abort)
+            pr = await chat_json(payer_msgs, temperature=0.45, max_tokens=512, model=fast_model, abort=abort)
             metrics.inferences += 1
             metrics.completion_tokens += pr.completion_tokens
             latencies.append(pr.latency_ms)
@@ -294,32 +571,14 @@ async def run_orchestrator(run: RunState) -> None:
             payer_msgs.append({"role": "assistant", "content": json.dumps(payer)})
             payer_text = (payer.get("text") or "").strip() or "Let me check on that."
             push_turn("payer", payer_text, pr.latency_ms)
+            had_payer_exchange = True
             transcript_text += f"\nPAYER: {payer_text}"
             agent_msgs.append({"role": "user", "content": f"PAYER said: {payer_text}"})
 
-            # ---- PREDICTION (third live inference) ----
-            pred = await chat_json(
-                [
-                    {"role": "system", "content": predictor_system_prompt(scenario)},
-                    {"role": "user", "content": f"Transcript so far:\n{transcript_text[-3000:]}"},
-                ],
-                temperature=0.2,
-                max_tokens=220,
-                abort=abort,
-            )
-            metrics.inferences += 1
-            latencies.append(pred.latency_ms)
-            if isinstance(pred.value, dict):
-                last_prediction = _normalize_prediction(pred.value, scenario)
-                emit(run, ev.prediction_event(last_prediction))
-                push_audit(
-                    type="prediction.update",
-                    actor="system",
-                    summary=f"Prediction — completion {last_prediction.completion_probability * 100:.0f}%, "
-                    f"escalation {last_prediction.escalation_risk * 100:.0f}%.",
-                    phi=False,
-                    redaction="none",
-                )
+            # ---- ANTICIPATORY PREDICTION + PREFETCH (off the critical path) ----
+            # Fire-and-forget: forecast + warm the cache for likely next tools
+            # while the loop moves on. Cancelled if superseded or the run stops.
+            fire_anticipation()
 
             emit(run, ev.status_event("active", phase_from_prediction(last_prediction), now()))
             push_metrics()
@@ -330,6 +589,18 @@ async def run_orchestrator(run: RunState) -> None:
                 agent_msgs.append({"role": "user", "content": "The payer indicated the call is concluding. Record, summarize, and end."})
             # (payer_ended + high escalation risk simply lets the agent escalate next turn)
             _ = payer_ended
+
+        # Let the final anticipation finish so the last prediction/prefetch lands
+        # and is persisted — but never wait on a stopped run. anticipate() swallows
+        # its own errors, so this await returns cleanly.
+        if run.pred_task and not run.pred_task.done():
+            if outcome == "stopped":
+                run.pred_task.cancel()
+            else:
+                try:
+                    await run.pred_task
+                except BaseException:  # noqa: BLE001 - predictor is best-effort, never block finalize
+                    pass
 
         if outcome != "stopped":
             if outcome == "escalated":
@@ -372,6 +643,8 @@ async def run_orchestrator(run: RunState) -> None:
             emit(run, ev.done_event("stopped"))
         run.done = True
     finally:
+        if run.pred_task and not run.pred_task.done():
+            run.pred_task.cancel()
         run_store.close_subscribers(run)
 
 
@@ -402,10 +675,11 @@ async def _persist_run(
     """Best-effort persistence; never crash the call on a DB hiccup."""
     try:
         await query(
-            """INSERT INTO call_runs(id,user_id,scenario_id,payer,model,status,outcome,completion_prob,escalation_risk,started_at,ended_at)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, to_timestamp($10/1000.0), now())
+            """INSERT INTO call_runs(id,user_id,scenario_id,payer,model,status,outcome,completion_prob,escalation_risk,started_at,ended_at,event_stream)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, to_timestamp($10/1000.0), now(), $11::jsonb)
                ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, outcome=EXCLUDED.outcome,
-                 completion_prob=EXCLUDED.completion_prob, escalation_risk=EXCLUDED.escalation_risk, ended_at=now()""",
+                 completion_prob=EXCLUDED.completion_prob, escalation_risk=EXCLUDED.escalation_risk,
+                 ended_at=now(), event_stream=EXCLUDED.event_stream""",
             [
                 run.id,
                 run.user_id,
@@ -417,6 +691,8 @@ async def _persist_run(
                 prediction.completion_probability if prediction else None,
                 prediction.escalation_risk if prediction else None,
                 run.started_at,
+                # Full SSE stream so the call can be replayed in Studio later.
+                json.dumps(run.events),
             ],
         )
         for e in events:

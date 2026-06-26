@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.core.format import now_ms
 
@@ -34,6 +35,19 @@ class RunState:
     started_at: float = field(default_factory=now_ms)
     abort: asyncio.Event = field(default_factory=asyncio.Event)
     task: asyncio.Task | None = None
+    # Context graph + anticipatory prefetch state (set by the orchestrator).
+    graph: Any = None  # app.agent.context_graph.ContextGraph | None
+    last_lit_sig: str | None = None
+    # Node ids surfaced so far (seeded/lit/widened). The emitted graph grows as
+    # the call proceeds — it shows only what the agent has discovered, not the
+    # full backdrop up front.
+    discovered: set[str] = field(default_factory=set)
+    prefetch_cache: dict[str, dict] = field(default_factory=dict)
+    pred_task: asyncio.Task | None = None
+    # Last anticipatory PredictionSet, kept so the next turn's reasoning trace can
+    # narrate which predictions the agent had weighed/prefetched.
+    last_pred_set: Any = None
+    pred_stats: dict[str, int] = field(default_factory=lambda: {"hits": 0, "misses": 0, "savedMs": 0, "wasted": 0})
 
 
 _runs: dict[str, RunState] = {}

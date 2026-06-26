@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, TypedDict
@@ -37,6 +38,10 @@ class LLMResult:
     latency_ms: int
     prompt_tokens: int
     completion_tokens: int
+    # Chain-of-thought from a reasoning model (qwen3/gemma/deepseek …). Captured
+    # from the OpenAI-compatible `reasoning`/`reasoning_content` field, or split
+    # from an inline `<think>…</think>` block. Empty for non-reasoning models.
+    reasoning: str = ""
 
 
 @dataclass
@@ -45,6 +50,23 @@ class LLMJsonResult:
     raw: str
     latency_ms: int
     completion_tokens: int
+    reasoning: str = ""
+
+
+_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _split_think(text: str) -> tuple[str, str]:
+    """Split an inline `<think>…</think>` block out of a completion. Returns
+    (reasoning, answer). A no-op when the model exposes reasoning out-of-band."""
+    if not text or "<think>" not in text.lower():
+        return "", text
+    m = _THINK_RE.search(text)
+    if m:
+        return m.group(1).strip(), (text[: m.start()] + text[m.end():]).strip()
+    # Unclosed tag (truncated): everything after the open tag is reasoning.
+    idx = text.lower().find("<think>")
+    return text[idx + len("<think>"):].strip(), text[:idx].strip()
 
 
 def _base_url() -> str:
@@ -64,11 +86,12 @@ async def chat(
     *,
     temperature: float = 0.3,
     max_tokens: int = 256,
+    model: str | None = None,
     abort: asyncio.Event | None = None,
 ) -> LLMResult:
     start = time.time()
     payload = {
-        "model": local_model_id(),
+        "model": model or local_model_id(),
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -99,11 +122,19 @@ async def chat(
     data = res.json()
     choice = (data.get("choices") or [{}])[0]
     usage = data.get("usage") or {}
+    message = choice.get("message") or {}
+    content = message.get("content") or ""
+    # Reasoning models expose their chain-of-thought either out-of-band (Ollama's
+    # OpenAI-compatible `reasoning` field) or inline as <think>…</think>.
+    reasoning = (message.get("reasoning") or message.get("reasoning_content") or "").strip()
+    if not reasoning:
+        reasoning, content = _split_think(content)
     return LLMResult(
-        text=(choice.get("message") or {}).get("content") or "",
+        text=content,
         latency_ms=round((time.time() - start) * 1000),
         prompt_tokens=usage.get("prompt_tokens", 0),
         completion_tokens=usage.get("completion_tokens", 0),
+        reasoning=reasoning,
     )
 
 
@@ -147,13 +178,14 @@ async def chat_json(
     *,
     temperature: float = 0.3,
     max_tokens: int = 256,
+    model: str | None = None,
     abort: asyncio.Event | None = None,
 ) -> LLMJsonResult:
     """Chat that must return JSON; one repair attempt if the first parse fails."""
-    first = await chat(messages, temperature=temperature, max_tokens=max_tokens, abort=abort)
+    first = await chat(messages, temperature=temperature, max_tokens=max_tokens, model=model, abort=abort)
     value = extract_json(first.text)
     if value is not None:
-        return LLMJsonResult(value, first.text, first.latency_ms, first.completion_tokens)
+        return LLMJsonResult(value, first.text, first.latency_ms, first.completion_tokens, first.reasoning)
 
     repair = await chat(
         [
@@ -166,6 +198,7 @@ async def chat_json(
         ],
         temperature=temperature,
         max_tokens=max_tokens,
+        model=model,
         abort=abort,
     )
     value = extract_json(repair.text)
@@ -174,7 +207,69 @@ async def chat_json(
         repair.text,
         first.latency_ms + repair.latency_ms,
         first.completion_tokens + repair.completion_tokens,
+        first.reasoning or repair.reasoning,
     )
+
+
+async def chat_stream(
+    messages: list[LLMMessage],
+    *,
+    temperature: float = 0.3,
+    max_tokens: int = 256,
+    model: str | None = None,
+    abort: asyncio.Event | None = None,
+    on_delta=None,
+) -> LLMJsonResult:
+    """Streaming chat for the agent turn — surfaces the reasoning model's
+    chain-of-thought token-by-token. `on_delta(reasoning_so_far, content_so_far)`
+    is awaited as tokens arrive (the caller throttles SSE emits). Returns the
+    parsed JSON action once the stream completes."""
+    start = time.time()
+    payload = {
+        "model": model or local_model_id(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {_api_key()}"}
+    reasoning = ""
+    content = ""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+        async with client.stream("POST", f"{_base_url()}/chat/completions", json=payload, headers=headers) as res:
+            if res.status_code >= 400:
+                body = await res.aread()
+                raise RuntimeError(f"Local LLM {res.status_code}: {body[:200]!r}")
+            async for line in res.aiter_lines():
+                if abort is not None and abort.is_set():
+                    raise LLMAborted("run stopped during inference")
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                choice = (obj.get("choices") or [{}])[0]
+                delta = choice.get("delta") or {}
+                rc = delta.get("reasoning") or delta.get("reasoning_content")
+                c = delta.get("content")
+                changed = False
+                if rc:
+                    reasoning += rc
+                    changed = True
+                if c:
+                    content += c
+                    changed = True
+                if changed and on_delta is not None:
+                    await on_delta(reasoning, content)
+    if not reasoning:
+        reasoning, content = _split_think(content)
+    value = extract_json(content)
+    completion_tokens = max(1, (len(content) + len(reasoning)) // 4)
+    return LLMJsonResult(value, content, round((time.time() - start) * 1000), completion_tokens, reasoning)
 
 
 async def local_llm_health() -> dict[str, Any]:

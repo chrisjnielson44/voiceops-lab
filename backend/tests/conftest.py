@@ -12,7 +12,6 @@ import pytest
 from app import db
 from app.llm.local_llm import LLMJsonResult, LLMResult
 
-
 # --- Fake Postgres pool -----------------------------------------------------
 # Every module reaches the DB through `app.db.query`, which calls
 # `app.db.get_pool().fetch(...)`. Swapping the module-level `_pool` for a fake is
@@ -73,7 +72,7 @@ class FakeLLM:
             {"action": "end", "outcome": "completed", "summary": "Eligibility confirmed."},
         ]
 
-    async def chat_json(self, messages, *, temperature=0.3, max_tokens=256, abort=None):
+    async def chat_json(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None):
         await asyncio.sleep(0)
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
         if "provider-services representative" in system:
@@ -83,9 +82,19 @@ class FakeLLM:
         else:  # agent decision
             value = self.agent_script[min(self.agent_step, len(self.agent_script) - 1)]
             self.agent_step += 1
-        return LLMJsonResult(value=value, raw="{}", latency_ms=12, completion_tokens=20)
+        return LLMJsonResult(value=value, raw="{}", latency_ms=12, completion_tokens=20, reasoning="Considering the member's eligibility.")
 
-    async def chat(self, messages, *, temperature=0.3, max_tokens=256, abort=None):
+    async def chat_stream(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None, on_delta=None):
+        # The agent turn now streams; return the next scripted decision and emit a
+        # token of reasoning so the streaming reasoning path is exercised.
+        await asyncio.sleep(0)
+        if on_delta is not None:
+            await on_delta("Considering the next step in the call.", "")
+        value = self.agent_script[min(self.agent_step, len(self.agent_script) - 1)]
+        self.agent_step += 1
+        return LLMJsonResult(value=value, raw="{}", latency_ms=12, completion_tokens=20, reasoning="Considering the next step in the call.")
+
+    async def chat(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None):
         await asyncio.sleep(0)
         return LLMResult(text="Encounter summary: eligibility verified.", latency_ms=10, prompt_tokens=5, completion_tokens=8)
 
@@ -96,6 +105,7 @@ def fake_llm(monkeypatch):
     from app.agent import orchestrator, tools
 
     monkeypatch.setattr(orchestrator, "chat_json", llm.chat_json)
+    monkeypatch.setattr(orchestrator, "chat_stream", llm.chat_stream)
     monkeypatch.setattr(tools, "chat", llm.chat)
     return llm
 

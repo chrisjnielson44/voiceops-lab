@@ -15,15 +15,15 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ProviderStatusResponse } from "@/state/useProviderStatus";
 import { useCallStore } from "@/state/useCallStore";
-import { getScenario } from "@/lib/simulation/scenarios";
+import { useScenario } from "@/state/useScenario";
 import { PROVIDER_LABELS } from "@/lib/providers/registry";
-import { Panel, PanelHeader } from "@/components/ui/Panel";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MotionItem, MotionStagger } from "@/components/ui/motion";
-import { Segmented } from "@/components/ui/Segmented";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 
 interface CallResult {
@@ -89,9 +89,9 @@ function ConfigCard({
 
 export function TelephonyView({ providerStatus }: { providerStatus: ProviderStatusResponse | null }) {
   const scenarioId = useCallStore((s) => s.scenarioId);
-  const scenario = getScenario(scenarioId);
+  const { data: scenario } = useScenario(scenarioId);
   const [vendor, setVendor] = useState<"livekit" | "twilio">("livekit");
-  const [toNumber, setToNumber] = useState("+1 (555) 010-2233");
+  const [toNumber, setToNumber] = useState("");
   const [result, setResult] = useState<CallResult | null>(null);
   const [loading, setLoading] = useState(false);
   const reduce = useReducedMotion();
@@ -117,12 +117,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-lg font-semibold text-foreground">Real-number calling &amp; integrations</h1>
-        <p className="text-xs text-muted-foreground">
-          Pluggable telephony and voice providers — disabled in demo mode by design.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h1>
 
       {/* Demo-mode banner */}
       <motion.div
@@ -151,19 +146,24 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Test call */}
-        <Panel className="lg:col-span-1">
-          <PanelHeader title="Place a call (demo)" icon={<PhoneOutgoing className="h-4 w-4" />} />
+        <Card className="flex flex-col lg:col-span-1">
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-muted-foreground"><PhoneOutgoing className="h-4 w-4" /></span>
+              <div className="min-w-0">
+                <CardTitle className="truncate">Place a call (demo)</CardTitle>
+              </div>
+            </div>
+          </CardHeader>
           <div className="space-y-3 p-4">
             <div>
               <Label className="mb-1 block">Telephony vendor</Label>
-              <Segmented
-                value={vendor}
-                onChange={(v) => setVendor(v)}
-                options={[
-                  { value: "livekit", label: "LiveKit" },
-                  { value: "twilio", label: "Twilio" },
-                ]}
-              />
+              <Tabs value={vendor} onValueChange={(val) => setVendor(val as "livekit" | "twilio")}>
+                <TabsList className="w-full">
+                  <TabsTrigger value="livekit" className="flex-1">LiveKit</TabsTrigger>
+                  <TabsTrigger value="twilio" className="flex-1">Twilio</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
             <div>
               <Label htmlFor="dest-number" className="mb-1 block">
@@ -176,7 +176,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
                 placeholder="+1 (555) 010-2233"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Calling {scenario.payer} for: {scenario.title.toLowerCase()}
+                Calling {scenario?.payer ?? "—"} for: {(scenario?.title ?? "").toLowerCase()}
               </p>
             </div>
             <Button type="button" onClick={placeCall} disabled={loading} className="w-full">
@@ -213,7 +213,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
               )}
             </AnimatePresence>
           </div>
-        </Panel>
+        </Card>
 
         {/* Telephony providers */}
         <MotionStagger className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-2">
@@ -258,13 +258,17 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
       </div>
 
       {/* LiveKit voice agent */}
-      <Panel>
-        <PanelHeader
-          title="LiveKit voice agent"
-          icon={<Radio className="h-4 w-4" />}
-          subtitle="Deployable Python agent in /agent — same tools + local model, over real STT/LLM/TTS"
-          right={<StatusChip tone="violet">code ready · deploy later</StatusChip>}
-        />
+      <Card className="flex flex-col">
+        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-muted-foreground"><Radio className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <CardTitle className="truncate">LiveKit voice agent</CardTitle>
+              <p className="truncate text-xs text-muted-foreground">Deployable Python agent in /agent — same tools + local model, over real STT/LLM/TTS</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2"><StatusChip tone="violet">code ready · deploy later</StatusChip></div>
+        </CardHeader>
         <div className="space-y-3 p-4">
           <p className="text-sm leading-relaxed text-muted-foreground">
             The voice counterpart to the in-app text agent lives in{" "}
@@ -278,11 +282,18 @@ lk cloud auth            # browser login to your LiveKit account
 cd agent && lk agent create   # builds + deploys (uses Dockerfile)`}
           </pre>
         </div>
-      </Panel>
+      </Card>
 
       {/* Go-live checklist */}
-      <Panel>
-        <PanelHeader title="Go-live checklist" icon={<ListChecks className="h-4 w-4" />} />
+      <Card className="flex flex-col">
+        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-muted-foreground"><ListChecks className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <CardTitle className="truncate">Go-live checklist</CardTitle>
+            </div>
+          </div>
+        </CardHeader>
         <MotionStagger className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { n: 1, t: "Provision telephony", d: "Add LiveKit SIP trunk or Twilio number + credentials to .env.local." },
@@ -304,7 +315,7 @@ cd agent && lk agent create   # builds + deploys (uses Dockerfile)`}
             </MotionItem>
           ))}
         </MotionStagger>
-      </Panel>
+      </Card>
     </div>
   );
 }

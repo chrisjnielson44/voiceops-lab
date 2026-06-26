@@ -9,7 +9,17 @@ const EMAIL = "design-preview@voiceops.local";
 const PASSWORD = "previewpass123";
 const OUT = "design-preview";
 
-const TABS = ["Cockpit", "Analytics", "Benchmarks", "Telephony"];
+const TABS = [
+  "Home",
+  "Studio",
+  "Scenarios",
+  "Voices",
+  "Models",
+  "Analytics",
+  "Call History",
+  "Logs & Audit",
+  "Integrations",
+];
 const THEMES = ["dark", "light"];
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : TABS;
 
@@ -42,7 +52,7 @@ for (const theme of THEMES) {
   for (const tab of wanted) {
     await page.getByRole("button", { name: tab, exact: true }).first().click();
     await page.waitForTimeout(2500); // let lazy chunks + charts + motion settle
-    const file = `${OUT}/${tab.toLowerCase()}-${theme}.png`;
+    const file = `${OUT}/${tab.toLowerCase().replace(/\s+/g, "-")}-${theme}.png`;
     await page.screenshot({ path: file, fullPage: true });
     console.log("shot", file);
   }

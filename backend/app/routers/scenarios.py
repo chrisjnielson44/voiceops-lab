@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
+from app.packs.registry import all_scenarios, get_scenario
 from app.routers._deps import require_internal
-from app.simulation.scenarios import SCENARIOS, get_scenario
 
 router = APIRouter(prefix="/api", tags=["scenarios"], dependencies=[Depends(require_internal)])
 
 
 @router.get("/scenarios")
 async def scenarios():
-    return {"scenarios": [s.to_wire() for s in SCENARIOS]}
+    return {"scenarios": [s.to_wire() for s in all_scenarios()]}
 
 
 @router.get("/scenarios/{scenario_id}")

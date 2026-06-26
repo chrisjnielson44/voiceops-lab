@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Table2, PieChart as PieIcon, BarChart3, Cpu, Inbox, Loader2 } from "lucide-react";
+import { Table2, PieChart as PieIcon, BarChart3, Cpu, Download, Inbox, Loader2 } from "lucide-react";
 
 import {
   Card,
@@ -10,7 +10,8 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/ui/card";
-import { ProgressBar } from "@/components/ui/Meter";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { MotionStagger, MotionItem } from "@/components/ui/motion";
 import { cn } from "@/lib/cn";
 import { formatCount, formatPercent } from "@/lib/format";
@@ -73,9 +74,18 @@ export function AnalyticsView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-        <h1 className="text-lg font-semibold text-foreground">Operations analytics</h1>
-        <p className="text-xs text-muted-foreground">Real metrics aggregated from your persisted call runs (Neon)</p>
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="flex items-end justify-between gap-3"
+      >
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Operations analytics</h1>
+        {data?.hasData && (
+          <Button variant="outline" size="sm" onClick={() => exportCsv(payers, models)}>
+            <Download className="h-4 w-4" /> Export CSV
+          </Button>
+        )}
       </motion.div>
 
       {isLoading ? (
@@ -88,8 +98,8 @@ export function AnalyticsView() {
             <Inbox className="h-7 w-7 text-muted-foreground" />
             <p className="text-sm font-medium text-foreground">No calls recorded yet</p>
             <p className="max-w-sm text-xs text-muted-foreground">
-              Run a call in the Cockpit or Voice tab. Every run persists to Neon and these analytics
-              populate from real data — nothing here is simulated.
+              Run a session in the Playground or Simulator. Every run persists to Neon and these
+              analytics populate from real data — nothing here is simulated.
             </p>
           </CardContent>
         </Card>
@@ -184,6 +194,23 @@ export function AnalyticsView() {
   );
 }
 
+function exportCsv(payers: PayerRow[], models: ModelRow[]): void {
+  const lines: string[] = ["section,name,calls,completion_rate,escalation_rate,aht_sec"];
+  for (const p of payers) lines.push(`payer,${csv(p.payer)},${p.calls},${p.completionRate},${p.escalationRate},${p.ahtSec}`);
+  for (const m of models) lines.push(`model,${csv(m.model)},${m.calls},${m.completionRate},${m.escalationRate},${m.ahtSec}`);
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "voicelabs-analytics.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csv(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
 function outcomeSlices(t: Totals): OutcomeSlice[] {
   const resolved = Math.round(t.completionRate * 100);
   const escalated = Math.round(t.escalationRate * 100);
@@ -234,10 +261,10 @@ function PerfTable<T extends Row>({
               <td className="px-4 py-2.5 text-right tabular text-muted-foreground">{formatCount(r.calls)}</td>
               <td className="px-4 py-2.5">
                 <div className="flex items-center gap-2">
-                  <ProgressBar
-                    value={r.completionRate}
-                    color={r.completionRate >= 0.85 ? "bg-emerald-500" : "bg-amber-500"}
+                  <Progress
+                    value={r.completionRate * 100}
                     className="h-1.5 w-16"
+                    indicatorClassName={r.completionRate >= 0.85 ? "bg-emerald-500" : "bg-amber-500"}
                   />
                   <span className="tabular text-xs text-muted-foreground">{formatPercent(r.completionRate)}</span>
                 </div>

@@ -43,6 +43,11 @@ async def test_full_call_stream(client, fake_pool, fake_llm):
     assert "prediction" in kinds
     assert "audit" in kinds
     assert "metrics" in kinds
+    # Each agent decision streams an inline reasoning trace with ordered segments.
+    assert "reasoning" in kinds
+    reasoning = next(e["reasoning"] for e in events if e["kind"] == "reasoning")
+    assert set(["id", "seq", "atMs", "segments"]).issubset(reasoning.keys())
+    assert reasoning["segments"] and reasoning["segments"][0]["phase"] in ("retrieve", "think", "anticipate")
 
     # Audit events carry a hash chain.
     audits = [e["event"] for e in events if e["kind"] == "audit"]

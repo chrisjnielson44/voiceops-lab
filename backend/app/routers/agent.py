@@ -16,14 +16,33 @@ from fastapi.responses import StreamingResponse
 
 from app.agent.orchestrator import run_orchestrator
 from app.agent.run_store import STREAM_END, create_run, get_run, subscribe, unsubscribe
+from app.db import query_one
 from app.llm.local_llm import local_model_id
 from app.routers._deps import require_internal, require_user
 
 router = APIRouter(prefix="/api/agent", tags=["agent"], dependencies=[Depends(require_internal)])
 
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
 
 def _run_id() -> str:
     return f"run_{int(time.time() * 1000):x}_{secrets.token_hex(3)}"
+
+
+def _parse_stream(value) -> list | None:
+    """asyncpg may hand back JSONB as a str (no codec) or already-parsed."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (ValueError, TypeError):
+            return None
+    return value if isinstance(value, list) else None
 
 
 @router.post("/start")
@@ -53,7 +72,20 @@ async def start(request: Request, user_id: str = Depends(require_user)):
 async def stream(runId: str, request: Request, _user: str = Depends(require_user)):
     run = get_run(runId)
     if not run:
-        raise HTTPException(status_code=404, detail="run not found")
+        # Not in memory (evicted / after restart) — replay the persisted stream
+        # so a stored call re-opens in full from Call History.
+        row = await query_one("SELECT event_stream FROM call_runs WHERE id=$1", [runId])
+        events = _parse_stream(row.get("event_stream")) if row else None
+        if not events:
+            raise HTTPException(status_code=404, detail="run not found")
+
+        async def replay_source():
+            for e in events:
+                yield f"data: {json.dumps(e)}\n\n"
+            if not events or (isinstance(events[-1], dict) and events[-1].get("kind") != "done"):
+                yield f"data: {json.dumps({'kind': 'done', 'outcome': 'completed'})}\n\n"
+
+        return StreamingResponse(replay_source(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
     async def event_source():
         # Replay buffered events so a late-joining client sees the whole call.
@@ -69,7 +101,7 @@ async def stream(runId: str, request: Request, _user: str = Depends(require_user
                     break
                 try:
                     item = await asyncio.wait_for(q.get(), timeout=15.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Heartbeat comment keeps proxies from closing an idle stream.
                     yield ": keep-alive\n\n"
                     continue

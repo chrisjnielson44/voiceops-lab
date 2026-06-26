@@ -4,6 +4,7 @@ export type AuditEventType =
   | "model.invoke"
   | "tool.call"
   | "phi.access"
+  | "context.retrieve"
   | "prediction.update"
   | "compliance.flag"
   | "call.escalate"

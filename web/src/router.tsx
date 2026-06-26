@@ -11,45 +11,54 @@ import {
 } from "@tanstack/react-router";
 
 import { AppSidebar, type TabId } from "@/components/AppSidebar";
-import { CockpitView } from "@/components/CockpitView";
 import { TelephonyView } from "@/components/TelephonyView";
+import { HomeView } from "@/components/HomeView";
+import { ScenariosView } from "@/components/ScenariosView";
+import { VoicesView } from "@/components/VoicesView";
+import { ModelsView } from "@/components/ModelsView";
+import { LogsView } from "@/components/LogsView";
 import { AuthScreen } from "@/components/AuthScreen";
+import { CommandPalette } from "@/components/CommandPalette";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { StatusChip } from "@/components/ui/StatusChip";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { Toaster } from "@/components/ui/sonner";
 import { MotionView } from "@/components/ui/motion";
 import { useProviderStatus } from "@/state/useProviderStatus";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useSession } from "@/lib/auth/client";
 
-const TAB_TITLES: Record<TabId, { title: string; subtitle: string }> = {
-  cockpit: { title: "Cockpit", subtitle: "Live two-agent call runtime" },
-  analytics: { title: "Analytics", subtitle: "Operations KPIs from real runs" },
-  voice: { title: "Voice", subtitle: "Live browser voice sandbox" },
-  telephony: { title: "Telephony", subtitle: "Providers, dialing & integrations" },
+// Tabs are real routes; the Home overview is the landing page at "/".
+const PATH_BY_TAB: Record<TabId, string> = {
+  home: "/",
+  studio: "/studio",
+  scenarios: "/scenarios",
+  voices: "/voices",
+  models: "/models",
+  analytics: "/analytics",
+  calls: "/calls",
+  logs: "/logs",
+  integrations: "/integrations",
 };
 
-// Tabs are real routes; cockpit lives at "/".
-const PATH_BY_TAB = {
-  cockpit: "/",
-  analytics: "/analytics",
-  voice: "/voice",
-  telephony: "/telephony",
-} as const;
-
 function tabFromPath(pathname: string): TabId {
+  // /playground and /simulator are legacy aliases of the merged Studio.
+  if (pathname.startsWith("/studio") || pathname.startsWith("/playground") || pathname.startsWith("/simulator")) return "studio";
+  if (pathname.startsWith("/scenarios")) return "scenarios";
+  if (pathname.startsWith("/voices")) return "voices";
+  if (pathname.startsWith("/models")) return "models";
   if (pathname.startsWith("/analytics")) return "analytics";
-  if (pathname.startsWith("/voice")) return "voice";
-  if (pathname.startsWith("/telephony")) return "telephony";
-  return "cockpit";
+  if (pathname.startsWith("/calls")) return "calls";
+  if (pathname.startsWith("/logs")) return "logs";
+  if (pathname.startsWith("/integrations")) return "integrations";
+  return "home";
 }
 
-// Dev/preview only: skip the auth gate so the screenshot harness can render the
-// cockpit without a running Better Auth host. Never set in production builds.
+// Dev/preview only: skip the auth gate so the screenshot harness can render
+// without a running Better Auth host. Never set in production builds.
 const PREVIEW_BYPASS = import.meta.env.VITE_PREVIEW_BYPASS === "1";
 
 function RootShell() {
@@ -57,7 +66,9 @@ function RootShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const tab = tabFromPath(pathname);
 
-  const { data: providerStatus } = useProviderStatus();
+  // Global keyboard shortcuts (⌘K, ⌘,, ⇧D, g-then-key navigation).
+  useKeyboardShortcuts((path) => navigate({ to: path }));
+
   const { data: session, isPending } = useSession();
 
   const tailnetDemo =
@@ -79,35 +90,20 @@ function RootShell() {
     return <AuthScreen />;
   }
 
-  const meta = TAB_TITLES[tab];
-  const llm = providerStatus?.localLLM;
-
   return (
     <SidebarProvider>
       <AppSidebar
         tab={tab}
         onTab={(t) => navigate({ to: PATH_BY_TAB[t] })}
-        providerStatus={providerStatus}
         userName={user.name ?? undefined}
         userEmail={user.email}
       />
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-xl">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="h-5" />
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold text-foreground">{meta.title}</h1>
-            <p className="hidden truncate text-[11px] text-muted-foreground sm:block">{meta.subtitle}</p>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <StatusChip tone={llm?.ok ? "green" : "slate"} dot pulse={llm?.ok} className="hidden md:inline-flex">
-              {llm?.ok ? "model online" : "model offline"}
-            </StatusChip>
-            <ThemeToggle />
-          </div>
-        </header>
+        {/* No top bar — search lives in the sidebar (OpenAI-style). A floating
+            trigger on mobile opens the off-canvas sidebar. */}
+        <SidebarTrigger className="fixed left-3 top-3 z-30 h-9 w-9 rounded-lg border border-border bg-background/80 backdrop-blur md:hidden" />
 
-        <div className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-5 sm:px-6">
+        <div className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <AnimatePresence mode="wait">
             <MotionView key={tab}>
               <Outlet />
@@ -115,6 +111,11 @@ function RootShell() {
           </AnimatePresence>
         </div>
       </SidebarInset>
+
+      {/* Global overlays driven by the settings store. */}
+      <CommandPalette navigate={(path) => navigate({ to: path })} />
+      <SettingsDialog user={user} />
+      <Toaster />
     </SidebarProvider>
   );
 }
@@ -123,36 +124,70 @@ function RootShell() {
 
 const rootRoute = createRootRoute({ component: RootShell });
 
-function CockpitRoute() {
-  const { data } = useProviderStatus();
-  return <CockpitView providerStatus={data} />;
+function HomeRoute() {
+  const navigate = useNavigate();
+  return <HomeView onNavigate={(path) => navigate({ to: path })} />;
 }
 
-function TelephonyRoute() {
+function IntegrationsRoute() {
   const { data } = useProviderStatus();
   return <TelephonyView providerStatus={data} />;
 }
 
-// Cockpit (landing) + Telephony are eager; the recharts-heavy Analytics and the
-// LiveKit-heavy Voice views are code-split so their bundles load only on demand.
-const cockpitRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: CockpitRoute });
+function ScenariosRoute() {
+  const navigate = useNavigate();
+  return <ScenariosView onNavigate={(path) => navigate({ to: path })} />;
+}
+function VoicesRoute() {
+  const navigate = useNavigate();
+  return <VoicesView onNavigate={(path) => navigate({ to: path })} />;
+}
+function ModelsRoute() {
+  const navigate = useNavigate();
+  return <ModelsView onNavigate={(path) => navigate({ to: path })} />;
+}
+
+// Home is the eager landing. Playground (LiveKit), Analytics (recharts), and
+// Call History are code-split so their bundles load only on demand.
+const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomeRoute });
+// The merged Studio (live voice + simulate). /playground and /simulator are
+// legacy aliases so existing links/shortcuts keep working.
+const studioLazy = lazyRouteComponent(() => import("@/components/StudioView"), "StudioView");
+// `?runId=` opens a stored/live session for replay (from Call History).
+const validateStudioSearch = (search: Record<string, unknown>): { runId?: string } => ({
+  runId: typeof search.runId === "string" ? search.runId : undefined,
+});
+const studioRoute = createRoute({ getParentRoute: () => rootRoute, path: "/studio", component: studioLazy, validateSearch: validateStudioSearch });
+const playgroundRoute = createRoute({ getParentRoute: () => rootRoute, path: "/playground", component: studioLazy });
+const simulatorRoute = createRoute({ getParentRoute: () => rootRoute, path: "/simulator", component: studioLazy });
+const scenariosRoute = createRoute({ getParentRoute: () => rootRoute, path: "/scenarios", component: ScenariosRoute });
+const voicesRoute = createRoute({ getParentRoute: () => rootRoute, path: "/voices", component: VoicesRoute });
+const modelsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/models", component: ModelsRoute });
+const logsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/logs", component: LogsView });
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/analytics",
   component: lazyRouteComponent(() => import("@/components/AnalyticsView"), "AnalyticsView"),
 });
-const voiceRoute = createRoute({
+const callsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/voice",
-  component: lazyRouteComponent(() => import("@/components/VoiceView"), "VoiceView"),
+  path: "/calls",
+  component: lazyRouteComponent(() => import("@/components/CallHistoryView"), "CallHistoryView"),
 });
-const telephonyRoute = createRoute({ getParentRoute: () => rootRoute, path: "/telephony", component: TelephonyRoute });
+const integrationsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/integrations", component: IntegrationsRoute });
 
 const routeTree = rootRoute.addChildren([
-  cockpitRoute,
+  homeRoute,
+  studioRoute,
+  playgroundRoute,
+  simulatorRoute,
+  scenariosRoute,
+  voicesRoute,
+  modelsRoute,
   analyticsRoute,
-  voiceRoute,
-  telephonyRoute,
+  callsRoute,
+  logsRoute,
+  integrationsRoute,
 ]);
 
 function RoutePending() {
@@ -165,8 +200,7 @@ function RoutePending() {
 
 export const router = createRouter({
   routeTree,
-  // Show a spinner immediately while a code-split route's chunk loads, instead
-  // of a blank frame.
+  // Show a spinner immediately while a code-split route's chunk loads.
   defaultPendingComponent: RoutePending,
   defaultPendingMs: 0,
 });

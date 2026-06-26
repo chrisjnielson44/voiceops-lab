@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { ShieldCheck, Copy, Download, Check, Lock, Hash, Fingerprint } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallStore } from "@/state/useCallStore";
-import { getScenario } from "@/lib/simulation/scenarios";
+import { useScenario } from "@/state/useScenario";
 import { verifyLedger } from "@/lib/audit/ledger";
 import type { AuditEventType } from "@/lib/audit/types";
-import { Panel, PanelHeader } from "@/components/ui/Panel";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusChip, type Tone } from "@/components/ui/StatusChip";
 
 const TYPE_META: Record<AuditEventType, { tone: Tone; label: string }> = {
@@ -16,6 +16,7 @@ const TYPE_META: Record<AuditEventType, { tone: Tone; label: string }> = {
   "model.invoke": { tone: "blue", label: "model" },
   "tool.call": { tone: "violet", label: "tool" },
   "phi.access": { tone: "violet", label: "phi" },
+  "context.retrieve": { tone: "blue", label: "graph" },
   "prediction.update": { tone: "slate", label: "predict" },
   "compliance.flag": { tone: "amber", label: "compliance" },
   "call.escalate": { tone: "amber", label: "escalate" },
@@ -30,7 +31,7 @@ export function AuditLedger() {
   const modelLabel = useCallStore((s) => s.modelLabel);
   const [copied, setCopied] = useState(false);
 
-  const scenario = getScenario(scenarioId);
+  const { data: scenario } = useScenario(scenarioId);
   const verified = useMemo(() => (audit.length ? verifyLedger(audit) : true), [audit]);
   const head = audit.length ? audit[audit.length - 1].hash : "";
 
@@ -38,7 +39,7 @@ export function AuditLedger() {
     JSON.stringify(
       {
         generatedBy: "VoiceOps Lab — live audit export",
-        call: { scenarioId: scenario.id, payer: scenario.payer, payerId: scenario.payerId, status, model: modelLabel },
+        call: { scenarioId, payer: scenario?.payer ?? null, payerId: scenario?.payerId ?? null, status, model: modelLabel },
         prediction,
         integrity: {
           algorithm: "sha256-chain",
@@ -67,7 +68,7 @@ export function AuditLedger() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `voiceops-audit-${scenario.id}.json`;
+    a.download = `voiceops-audit-${scenarioId || "run"}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -75,17 +76,21 @@ export function AuditLedger() {
   };
 
   return (
-    <Panel className="h-full">
-      <PanelHeader
-        title="Audit ledger"
-        icon={<ShieldCheck className="h-4 w-4" />}
-        subtitle={`${audit.length} events · append-only · hash-chained`}
-        right={
+    <Card className="flex flex-col h-full">
+      <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-muted-foreground"><ShieldCheck className="h-4 w-4" /></span>
+          <div className="min-w-0">
+            <CardTitle className="truncate">Audit ledger</CardTitle>
+            <p className="truncate text-xs text-muted-foreground">{`${audit.length} events · append-only · hash-chained`}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <StatusChip tone={verified ? "green" : "red"} dot>
             {verified ? "chain verified" : "chain broken"}
           </StatusChip>
-        }
-      />
+        </div>
+      </CardHeader>
 
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2">
         <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -165,6 +170,6 @@ export function AuditLedger() {
           </ol>
         )}
       </div>
-    </Panel>
+    </Card>
   );
 }

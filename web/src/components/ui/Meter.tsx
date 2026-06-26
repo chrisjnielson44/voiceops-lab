@@ -1,29 +1,4 @@
-import { cn } from "@/lib/cn";
 import { clamp } from "@/lib/format";
-
-/** Horizontal progress / value meter. */
-export function ProgressBar({
-  value,
-  color = "bg-primary",
-  track = "bg-secondary",
-  height = "h-2",
-  className,
-}: {
-  value: number; // 0..1
-  color?: string;
-  track?: string;
-  height?: string;
-  className?: string;
-}) {
-  return (
-    <div className={cn("w-full overflow-hidden rounded-full", track, height, className)}>
-      <div
-        className={cn("h-full rounded-full transition-[width] duration-500 ease-out", color)}
-        style={{ width: `${clamp(value, 0, 1) * 100}%` }}
-      />
-    </div>
-  );
-}
 
 /** Radial progress ring with arbitrary centered content. */
 export function Gauge({

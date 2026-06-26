@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AudioWaveform, Loader2, ShieldCheck, Database, Cpu } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { signIn, signUp } from "@/lib/auth/client";
-import { Segmented } from "@/components/ui/Segmented";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,18 +73,19 @@ export function AuthScreen() {
         </div>
 
         <div className="glass rounded-3xl p-6 shadow-pop">
-          <Segmented
+          <Tabs
             value={mode}
-            onChange={(m) => {
-              setMode(m);
+            onValueChange={(val) => {
+              setMode(val as Mode);
               setError(null);
             }}
-            options={[
-              { value: "signin", label: "Sign in" },
-              { value: "signup", label: "Create account" },
-            ]}
             className="mb-5"
-          />
+          >
+            <TabsList className="w-full">
+              <TabsTrigger value="signin" className="flex-1">Sign in</TabsTrigger>
+              <TabsTrigger value="signup" className="flex-1">Create account</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
           <form onSubmit={submit} className="space-y-3">
             <AnimatePresence initial={false}>

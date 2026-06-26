@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     local_llm_base_url: str = "http://127.0.0.1:8080/v1"
     local_llm_model: str = "mlx-community/Qwen2.5-7B-Instruct-4bit"
     local_llm_api_key: str = "local"
+    # A faster, non-reasoning local model used for the payer + predictor roles so
+    # the agent's (reasoning) model isn't on the critical path more than once per
+    # turn. Falls back to the agent model when empty.
+    local_llm_fast_model: str = ""
 
     # --- Optional hosted routing --------------------------------------------
     openrouter_api_key: str | None = None

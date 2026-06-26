@@ -11,8 +11,48 @@ on:
 concurrency: deploy-${{ github.ref }}
 
 jobs:
+  quality:
+    name: Quality gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Backend lint, audit, and tests
+        working-directory: backend
+        run: |
+          pip install ".[dev]"
+          ruff check .
+          pip-audit --skip-editable .
+          python -m pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            auth-server/package-lock.json
+            web/package-lock.json
+      - name: Auth dependency audit
+        working-directory: auth-server
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+      - name: Web lint, audit, tests, and build
+        working-directory: web
+        run: |
+          npm ci
+          npm run lint
+          npm run audit
+          npm run typecheck
+          npm run test
+          npm run build
+
   fly:
     name: Deploy auth + backend (Fly.io)
+    needs: quality
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     env:
@@ -30,6 +70,7 @@ jobs:
 
   web:
     name: Deploy SPA (Vercel)
+    needs: quality
     runs-on: ubuntu-latest
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     env:
@@ -40,13 +81,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-      - run: npm i -g vercel
-      - name: Deploy
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm install -g vercel@54.2.0
+      - name: Build then deploy prebuilt artifact
         working-directory: web
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+            vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+            vercel build --prod --token "$VERCEL_TOKEN"
+            vercel deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN"
           else
-            vercel deploy --yes --token "$VERCEL_TOKEN"
+            vercel pull --yes --environment=preview --token "$VERCEL_TOKEN"
+            vercel build --token "$VERCEL_TOKEN"
+            vercel deploy --prebuilt --yes --token "$VERCEL_TOKEN"
           fi
