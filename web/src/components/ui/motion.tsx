@@ -51,7 +51,9 @@ export function MotionItem({
   );
 }
 
-/** Page/view wrapper — fades the whole view in on mount + tab switch. */
+/** Page/view wrapper — a clean opacity crossfade on tab switch. No vertical
+ *  translate (which caused a layout jump) and a quick duration so switching
+ *  pages feels instant rather than flickering through a loader. */
 export function MotionView({
   children,
   className,
@@ -61,10 +63,10 @@ export function MotionView({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
       className={className}
     >
       {children}

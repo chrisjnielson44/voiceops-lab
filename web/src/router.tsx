@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import {
@@ -68,6 +69,19 @@ function RootShell() {
 
   // Global keyboard shortcuts (⌘K, ⌘,, ⇧D, g-then-key navigation).
   useKeyboardShortcuts((path) => navigate({ to: path }));
+
+  // Warm the code-split route chunks once the app is idle so switching pages is
+  // instant — no loader flash between the fade-out and the new view.
+  useEffect(() => {
+    const warm = () => {
+      void import("@/components/StudioView");
+      void import("@/components/AnalyticsView");
+      void import("@/components/CallHistoryView");
+    };
+    const w = window as typeof window & { requestIdleCallback?: (cb: () => void) => number };
+    if (typeof w.requestIdleCallback === "function") w.requestIdleCallback(warm);
+    else setTimeout(warm, 400);
+  }, []);
 
   const { data: session, isPending } = useSession();
 
@@ -200,9 +214,14 @@ function RoutePending() {
 
 export const router = createRouter({
   routeTree,
-  // Show a spinner immediately while a code-split route's chunk loads.
+  // Preload route chunks on hover/touch so navigation is instant.
+  defaultPreload: "intent",
+  defaultPreloadDelay: 30,
+  // Only show the loader if a chunk genuinely takes a while — chunks are warmed
+  // on idle (see RootShell), so in practice the loader never flashes.
   defaultPendingComponent: RoutePending,
-  defaultPendingMs: 0,
+  defaultPendingMs: 400,
+  defaultPendingMinMs: 0,
 });
 
 declare module "@tanstack/react-router" {
