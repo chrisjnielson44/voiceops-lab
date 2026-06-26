@@ -103,7 +103,7 @@ async def _runnable_models() -> list[dict]:
     out: list[dict] = await _local_models()
     if (settings.openrouter_api_key or "").strip():
         out.extend(
-            {"id": m.id, "label": m.label, "kind": "hosted", "reasoning": False}
+            {"id": m.id, "label": m.label, "kind": "hosted", "reasoning": m.reasoning}
             for m in MODELS
             if m.provider_id == "openrouter"
         )

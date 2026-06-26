@@ -24,6 +24,20 @@ def test_registry_has_curated_cheap_fast_openrouter_models():
             assert m.input_cost_per_1k >= 0 and m.output_cost_per_1k >= 0
 
 
+def test_deepseek_r1_is_the_reasoning_hosted_option():
+    # R1 streams a chain-of-thought (OpenRouter returns `reasoning` natively), so
+    # it's the hosted pick for watching the agent think. V3 (chat) does NOT reason.
+    r1 = next((m for m in MODELS if m.id == "deepseek/deepseek-r1"), None)
+    assert r1 is not None, "DeepSeek R1 missing from the catalog"
+    assert r1.provider_id == "openrouter" and r1.kind == "hosted"
+    assert r1.reasoning is True
+    v3 = next(m for m in MODELS if m.id == "deepseek/deepseek-chat")
+    assert v3.reasoning is False
+    # Non-reasoning hosted models (the ones a user might pick and see no CoT) stay false.
+    for mid in ("openai/gpt-4o-mini", "anthropic/claude-haiku-4.5"):
+        assert next(m for m in MODELS if m.id == mid).reasoning is False
+
+
 def test_hosted_model_routes_to_openrouter_when_key_set(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_api_key", "sk-test", raising=False)
     ep = local_llm._resolve_endpoint("anthropic/claude-haiku-4.5")
