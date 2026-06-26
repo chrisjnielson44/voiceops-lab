@@ -117,7 +117,7 @@ export function SimVoicePlayer({
       await delay(fallbackMs);
       return;
     }
-    let res: Response | null = null;
+    let res: Response | null;
     try {
       res = await fetch("/api/voice/tts", {
         method: "POST",
