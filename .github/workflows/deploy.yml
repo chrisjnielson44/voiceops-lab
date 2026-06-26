@@ -57,16 +57,17 @@ jobs:
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      SUFFIX: ${{ github.ref == 'refs/heads/main' && '' || '-staging' }}
+      FLY_AUTH_APP: ${{ github.ref == 'refs/heads/main' && 'voiceops-auth' || 'voiceops-auth-staging' }}
+      FLY_API_APP: ${{ github.ref == 'refs/heads/main' && 'voiceops-api' || 'voiceops-api-staging' }}
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy auth-server
         working-directory: auth-server
-        run: flyctl deploy --remote-only --app "voiceops-auth${SUFFIX}"
+        run: flyctl deploy --remote-only --app "$FLY_AUTH_APP"
       - name: Deploy backend
         working-directory: backend
-        run: flyctl deploy --remote-only --app "voiceops-api${SUFFIX}"
+        run: flyctl deploy --remote-only --app "$FLY_API_APP"
 
   web:
     name: Deploy SPA (Vercel)
