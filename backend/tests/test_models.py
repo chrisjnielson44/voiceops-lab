@@ -4,6 +4,32 @@ from __future__ import annotations
 import app.llm.local_llm as local_llm
 from app.config import settings
 from app.providers.registry import MODELS
+from app.routers.voice import _default_model, _fast_model
+
+
+def test_default_model_prefers_gpt4o_mini_on_hosted_only_deploy():
+    # Prod has no local server, so only hosted models are runnable. The picker
+    # must default to the cheap/fast preferred model, NOT the first (premium) one.
+    hosted = [
+        {"id": "anthropic/claude-sonnet-4.6", "reasoning": False, "kind": "hosted"},
+        {"id": "openai/gpt-4o-mini", "reasoning": False, "kind": "hosted"},
+        {"id": "google/gemini-2.5-flash", "reasoning": False, "kind": "hosted"},
+    ]
+    assert settings.default_model_id == "openai/gpt-4o-mini"
+    assert _default_model(hosted) == "openai/gpt-4o-mini"
+    assert _fast_model(hosted) == "openai/gpt-4o-mini"
+
+
+def test_default_model_respects_explicit_local_model(monkeypatch):
+    # In local dev an explicitly-configured local model still wins over the
+    # preferred hosted default.
+    monkeypatch.setattr(settings, "local_llm_model", "qwen3:14b")
+    local = [
+        {"id": "qwen3:14b", "reasoning": True, "kind": "local"},
+        {"id": "llama3.1:8b", "reasoning": False, "kind": "local"},
+    ]
+    assert _default_model(local) == "qwen3:14b"
+    assert _fast_model(local) == "llama3.1:8b"
 
 
 def test_registry_has_curated_cheap_fast_openrouter_models():
