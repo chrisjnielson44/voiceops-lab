@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import { Table2, PieChart as PieIcon, BarChart3, Cpu, Download, Inbox, Loader2 } from "lucide-react";
 
 import {
@@ -11,6 +10,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Progress } from "@/components/ui/progress";
 import { MotionStagger, MotionItem } from "@/components/ui/motion";
 import { cn } from "@/lib/cn";
@@ -73,20 +73,17 @@ export function AnalyticsView() {
   const volume = data?.volumeByHour ?? [];
 
   return (
-    <div className="flex flex-col gap-4">
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="flex items-end justify-between gap-3"
-      >
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Operations analytics</h1>
-        {data?.hasData && (
-          <Button variant="outline" size="sm" onClick={() => exportCsv(payers, models)}>
-            <Download className="h-4 w-4" /> Export CSV
-          </Button>
-        )}
-      </motion.div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Operations analytics"
+        actions={
+          data?.hasData && (
+            <Button variant="outline" size="sm" onClick={() => exportCsv(payers, models)}>
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+          )
+        }
+      />
 
       {isLoading ? (
         <div className="flex h-48 items-center justify-center">

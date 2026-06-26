@@ -7,12 +7,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.routers._deps import require_internal
+from app.routers._deps import require_internal, require_user
 from app.voice.livekit import livekit_telephony
 from app.voice.twilio import twilio_telephony
 from app.voice.types import PlaceCallRequest
 
-router = APIRouter(prefix="/api", tags=["telephony"], dependencies=[Depends(require_internal)])
+router = APIRouter(
+    prefix="/api",
+    tags=["telephony"],
+    dependencies=[Depends(require_internal), Depends(require_user)],
+)
 
 
 @router.post("/telephony")

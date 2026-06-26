@@ -123,7 +123,7 @@ def _default_model(models: list[dict]) -> str:
 
 
 @router.get("/options")
-async def options():
+async def options(_user: str = Depends(require_user)):
     voices = await _elevenlabs_voices()
     models = await _runnable_models()
     return {
@@ -225,18 +225,35 @@ async def token(request: Request, user_id: str = Depends(require_user)):
 
     from livekit import api
 
-    # Create the room up-front carrying the config metadata, so the agent reads
-    # the exact selected configuration (best-effort; token still works without it).
+    dispatch_id: str | None = None
+
+    # Create the room up-front carrying the config metadata, then explicitly
+    # dispatch the named worker. Relying on automatic room dispatch is brittle in
+    # local dev: the browser can connect while no agent job is assigned.
+    lk = None
     try:
         lk = api.LiveKitAPI(
             url=settings.livekit_url.replace("wss://", "https://").replace("ws://", "http://"),
             api_key=settings.livekit_api_key,
             api_secret=settings.livekit_api_secret,
         )
-        await lk.room.create_room(api.CreateRoomRequest(name=room, metadata=metadata, empty_timeout=300))
-        await lk.aclose()
+        try:
+            await lk.room.create_room(api.CreateRoomRequest(name=room, metadata=metadata, empty_timeout=300))
+        except Exception:  # noqa: BLE001 - the dispatch can still target an existing room
+            pass
+        dispatch = await lk.agent_dispatch.create_dispatch(
+            api.CreateAgentDispatchRequest(
+                agent_name=settings.livekit_agent_name,
+                room=room,
+                metadata=metadata,
+            )
+        )
+        dispatch_id = dispatch.id or None
     except Exception:  # noqa: BLE001
         pass
+    finally:
+        if lk is not None:
+            await lk.aclose()
 
     jwt = (
         api.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
@@ -255,4 +272,12 @@ async def token(request: Request, user_id: str = Depends(require_user)):
         .to_jwt()
     )
 
-    return {"url": settings.livekit_url, "token": jwt, "room": room, "runId": run_id, "config": config}
+    return {
+        "url": settings.livekit_url,
+        "token": jwt,
+        "room": room,
+        "runId": run_id,
+        "config": config,
+        "dispatchId": dispatch_id,
+        "agentName": settings.livekit_agent_name,
+    }

@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
-import { AnimatePresence } from "framer-motion";
 import {
   createRootRoute,
   createRoute,
@@ -117,12 +116,12 @@ function RootShell() {
             trigger on mobile opens the off-canvas sidebar. */}
         <SidebarTrigger className="fixed left-3 top-3 z-30 h-9 w-9 rounded-lg border border-border bg-background/80 backdrop-blur md:hidden" />
 
+        {/* Single gentle fade: the outgoing page is removed and the incoming one
+            fades up (keyed remount) — no overlap/ghosting, no loader flash. */}
         <div className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <AnimatePresence mode="wait">
-            <MotionView key={tab}>
-              <Outlet />
-            </MotionView>
-          </AnimatePresence>
+          <MotionView key={tab}>
+            <Outlet />
+          </MotionView>
         </div>
       </SidebarInset>
 

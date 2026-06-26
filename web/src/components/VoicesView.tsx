@@ -6,6 +6,7 @@ import { AudioLines, Check, Mic, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -58,10 +59,10 @@ export function VoicesView({ onNavigate }: { onNavigate: (path: string) => void 
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-end justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Voices</h1>
-        <div className="flex items-center gap-2">
-          {data?.speechProvider ? (
+      <PageHeader
+        title="Voices"
+        actions={
+          data?.speechProvider ? (
             <StatusChip tone="green" dot>
               {data.speechProvider} · {voices.length} voices
             </StatusChip>
@@ -69,9 +70,9 @@ export function VoicesView({ onNavigate }: { onNavigate: (path: string) => void 
             <StatusChip tone="amber" dot>
               fallback catalog
             </StatusChip>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

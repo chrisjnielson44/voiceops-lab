@@ -21,14 +21,7 @@ export function CallVolumeChart({ data }: { data: { hour: string; calls: number 
         <XAxis dataKey="hour" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
         <YAxis tickLine={false} axisLine={false} tickMargin={4} fontSize={11} width={40} allowDecimals={false} />
         <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-        <Bar
-          dataKey="calls"
-          fill="var(--color-calls)"
-          radius={[6, 6, 0, 0]}
-          isAnimationActive
-          animationDuration={800}
-          animationEasing="ease-out"
-        />
+        <Bar dataKey="calls" fill="var(--color-calls)" radius={[6, 6, 0, 0]} isAnimationActive={false} />
       </BarChart>
     </ChartContainer>
   );

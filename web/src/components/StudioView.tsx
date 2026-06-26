@@ -122,6 +122,7 @@ export function StudioView() {
   const liveInfo = useCallStore((s) => s.liveInfo);
   const replay = useCallStore((s) => s.replay);
   const setLiveInfo = useCallStore((s) => s.setLiveInfo);
+  const applyEvent = useCallStore((s) => s._apply);
   const openSession = useCallStore((s) => s.openSession);
   const endSession = useCallStore((s) => s.endSession);
 
@@ -278,7 +279,19 @@ export function StudioView() {
             </div>
           ) : liveInfo ? (
             <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-              <LiveKitRoom serverUrl={liveInfo.url} token={liveInfo.token} connect audio video={false} onDisconnected={() => setLiveInfo(null)}>
+              <LiveKitRoom
+                serverUrl={liveInfo.url}
+                token={liveInfo.token}
+                connect
+                audio
+                video={false}
+                onConnected={() => applyEvent({ kind: "status", status: "active", phase: 0, elapsedMs: 0 })}
+                onDisconnected={endSession}
+                onError={(err) => {
+                  setLiveError(err.message);
+                  endSession();
+                }}
+              >
                 <RoomAudioRenderer />
                 <LiveStage onEnd={newSession} />
               </LiveKitRoom>

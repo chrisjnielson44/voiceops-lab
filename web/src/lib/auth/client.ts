@@ -1,8 +1,8 @@
 import { createAuthClient } from "better-auth/react";
 
 /**
- * Better Auth React client. In dev the Vite proxy maps /api/auth -> the Next.js
- * auth host, so the default (current-origin /api/auth) works and keeps cookies
+ * Better Auth React client. In dev the Vite proxy maps /api/auth -> the
+ * standalone auth-server, so the default (current-origin /api/auth) works and keeps cookies
  * same-origin. For a split-origin production deploy, set VITE_AUTH_BASE_URL to
  * the auth origin (e.g. https://auth.example.com/api/auth) — the server must
  * then allow this origin (trustedOrigins) and send credentials.

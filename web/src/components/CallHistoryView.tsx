@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -107,8 +108,8 @@ export function CallHistoryView() {
   });
 
   return (
-    <div className="flex flex-col gap-5">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Call History</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Call History" />
 
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0">

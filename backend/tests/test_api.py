@@ -175,6 +175,39 @@ async def test_require_auth_blocks_unauthenticated(client, monkeypatch):
     assert r.status_code == 401
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/api/analytics", None),
+        ("GET", "/api/calls", None),
+        ("GET", "/api/calls/run_x", None),
+        ("GET", "/api/providers", None),
+        ("POST", "/api/llm", {}),
+        ("GET", "/api/scenarios", None),
+        ("GET", "/api/scenarios/elig-aetna", None),
+        ("POST", "/api/telephony", {"vendor": "twilio", "toNumber": "+15551234567"}),
+        ("GET", "/api/voice/options", None),
+    ],
+)
+async def test_require_auth_protects_app_routes(client, monkeypatch, method, path, body):
+    # With REQUIRE_AUTH on and no valid session, every app data/action route 401s.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "require_auth", True)
+    r = await client.request(method, path, json=body)
+    assert r.status_code == 401, f"{method} {path} should require auth"
+
+
+@pytest.mark.parametrize("path", ["/healthz", "/readyz"])
+async def test_health_routes_stay_public_under_auth(client, monkeypatch, path):
+    # Liveness/readiness probes must never require a session.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "require_auth", True)
+    r = await client.get(path)
+    assert r.status_code == 200
+
+
 async def test_anon_fallback_when_auth_not_required(client, fake_pool, fake_llm):
     # Default (REQUIRE_AUTH off): start works and attributes to the demo user.
     r = await client.post("/api/agent/start", json={"scenarioId": "elig-aetna"})

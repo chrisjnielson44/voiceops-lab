@@ -14,9 +14,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import query, query_one
-from app.routers._deps import require_internal
+from app.routers._deps import require_internal, require_user
 
-router = APIRouter(prefix="/api", tags=["calls"], dependencies=[Depends(require_internal)])
+router = APIRouter(
+    prefix="/api",
+    tags=["calls"],
+    dependencies=[Depends(require_internal), Depends(require_user)],
+)
 
 
 def _iso(value: Any) -> str | None:

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import traceback
 from typing import Any
 
 import psycopg
@@ -48,6 +49,13 @@ member eligibility, claim status, or prior-auth status. Speak only facts returne
 invent coverage, claim, or auth details. Be concise and professional. If the payer requires a
 peer-to-peer review or you cannot resolve the issue autonomously, say so and escalate. Capture the
 required fields, then summarize the outcome and end the call politely."""
+
+
+def _debug(msg: str) -> None:
+    # Lightweight local trace for LiveKit job startup; useful because child
+    # process logs do not reliably surface through `python agent.py dev`.
+    with open("/tmp/voiceops-agent-debug.log", "a", encoding="utf-8") as f:
+        f.write(f"{msg}\n")
 
 
 def _query(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -144,7 +152,17 @@ def _build_llm(model: str, temperature: float):
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:
+    try:
+        await _entrypoint(ctx)
+    except Exception:  # noqa: BLE001
+        _debug(traceback.format_exc())
+        raise
+
+
+async def _entrypoint(ctx: agents.JobContext) -> None:
+    _debug(f"entrypoint start room={ctx.room.name}")
     await ctx.connect()
+    _debug(f"connected room={ctx.room.name} participants={len(ctx.room.remote_participants)}")
 
     # The selected sandbox config rides on the room metadata (set by /api/voice/token).
     try:
@@ -160,14 +178,16 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     # name IS the runId (set by POST /api/voice/token).
     recorder = CallRecorder(DB_URL, ctx.room.name, model)
     await asyncio.to_thread(recorder.start)
+    _debug(f"recorder started room={ctx.room.name}")
 
     has_eleven = bool(os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"))
+    _debug(f"session build start room={ctx.room.name} has_eleven={has_eleven}")
 
     session = AgentSession(
         llm=_build_llm(model, temperature),
         # ElevenLabs handles both speech-to-text (Scribe v2 realtime) and TTS
         # from a single key; the selected voice is applied to TTS.
-        stt=elevenlabs.STT(model="scribe_v2_realtime") if has_eleven else None,
+        stt=elevenlabs.STT(model_id="scribe_v2_realtime") if has_eleven else None,
         tts=(
             elevenlabs.TTS(**({"voice_id": voice_id} if voice_id else {})) if has_eleven else None
         ),
@@ -175,6 +195,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
         # Forward word-aligned TTS transcripts so the cockpit shows synced captions.
         use_tts_aligned_transcript=True,
     )
+    _debug(f"session built room={ctx.room.name}")
 
     # Persist each conversation turn (audit chain) as it lands.
     @session.on("conversation_item_added")
@@ -192,10 +213,26 @@ async def entrypoint(ctx: agents.JobContext) -> None:
     ctx.add_shutdown_callback(_finalize)
 
     await session.start(agent=PayerOpsAgent(recorder, instructions), room=ctx.room)
-    await session.generate_reply(
-        instructions="Greet the payer representative and state the reason for the call."
+    _debug(f"session started room={ctx.room.name}")
+    await asyncio.sleep(0.5)
+    session.say(
+        f"Hello, this is VoiceOps calling {recorder.payer or 'provider services'} on a recorded line. "
+        "I am calling to verify eligibility and benefits for an office visit."
     )
+    _debug(f"greeting queued room={ctx.room.name}")
+    # `AgentSession.start()` is non-blocking. Keep the job process alive until
+    # LiveKit terminates it; otherwise the browser joins a room with no agent.
+    try:
+        await asyncio.Event().wait()
+    finally:
+        _debug(f"session closing room={ctx.room.name}")
+        await session.aclose()
 
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(
+        agents.WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            agent_name=os.environ.get("LIVEKIT_AGENT_NAME", "voiceops-agent"),
+        )
+    )

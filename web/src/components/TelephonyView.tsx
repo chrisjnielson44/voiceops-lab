@@ -18,6 +18,7 @@ import { useCallStore } from "@/state/useCallStore";
 import { useScenario } from "@/state/useScenario";
 import { PROVIDER_LABELS } from "@/lib/providers/registry";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,16 +117,11 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
   const demoMode = providerStatus?.demoMode ?? true;
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Integrations" />
 
       {/* Demo-mode banner */}
-      <motion.div
-        initial={reduce ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-        className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4"
-      >
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
         <div>
           <div className="flex items-center gap-2">
@@ -142,7 +138,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
             with a verified callee.
           </p>
         </div>
-      </motion.div>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Test call */}

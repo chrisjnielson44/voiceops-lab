@@ -29,9 +29,7 @@ export function OutcomeDonut({ data }: { data: OutcomeSlice[] }) {
             stroke="transparent"
             startAngle={90}
             endAngle={-270}
-            isAnimationActive
-            animationDuration={900}
-            animationEasing="ease-out"
+            isAnimationActive={false}
           >
             {data.map((slice) => (
               <Cell key={slice.label} fill={slice.color} />

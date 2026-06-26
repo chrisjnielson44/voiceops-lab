@@ -6,9 +6,10 @@ agent calls real SQL tools against Neon, a predictor model runs each turn, every
 event streams over SSE and persists to Postgres, and analytics aggregate live
 runs. Nothing is mocked.
 
-This service owns everything **except authentication** — Better Auth stays in the
-Next.js app, which authenticates the user and forwards their id to this service
-(see [Auth boundary](#auth-boundary)).
+This service owns everything **except authentication** — Better Auth runs in the
+standalone auth-server (`../auth-server`), which authenticates the user; this
+service validates the forwarded session cookie against it (see
+[Auth boundary](#auth-boundary)).
 
 ## Layout
 
@@ -64,30 +65,28 @@ Open **http://localhost:8000/docs** for the OpenAPI explorer.
 | GET  | `/healthz` · `/readyz` | Liveness / dependency health |
 
 The SSE event shapes, JSON keys (camelCase), DB schema, and the **audit hash
-chain** are byte-compatible with the original Next.js implementation — the
-frontend re-verifies the chain client-side and `tests/test_hash.py` asserts
-parity against the original `src/lib/hash.ts` output.
+chain** are byte-compatible with the original Next.js implementation (this
+runtime was ported from it) — the frontend re-verifies the chain client-side and
+`tests/test_hash.py` asserts parity against the original `src/lib/hash.ts` output.
 
 ## Auth boundary
 
-This service does **not** verify sessions. The Next.js app (Better Auth) is the
-gate. After authenticating, it forwards:
+Authentication lives in the standalone **Better Auth server** (`../auth-server`),
+not in this service. The browser authenticates there (`/api/auth/*`), and this
+backend **validates** the caller by introspecting the forwarded session cookie
+against `AUTH_SERVER_URL`'s `/api/auth/get-session` — it does not blindly trust a
+client-supplied header (see `app/routers/_deps.py`).
 
-- `x-voiceops-user: <user id>` — attributed to persisted runs (defaults to
-  `DEMO_USER_ID` when absent).
-- `x-internal-token: <secret>` — required only if `BACKEND_INTERNAL_TOKEN` is set.
+- App data/action routes depend on `require_user`: with `REQUIRE_AUTH=true`
+  (production) an unauthenticated request 401s; with `REQUIRE_AUTH=false`
+  (local/dev/tests) it falls back to an optional `x-voiceops-user` hint or
+  `DEMO_USER_ID`, attributed to persisted runs.
+- Health checks (`/healthz`, `/readyz`) stay public.
+- `x-internal-token: <secret>` is an optional extra shared-secret gate, enforced
+  only when `BACKEND_INTERNAL_TOKEN` is set.
 
-### Wiring the Next.js frontend to this backend (two options)
-
-1. **Rewrites** — in `next.config.mjs`, proxy `/api/agent/*`, `/api/analytics`,
-   `/api/providers`, `/api/llm`, `/api/telephony`, `/api/scenarios` to
-   `http://localhost:8000`, and inject the headers in `middleware.ts` after
-   reading the Better Auth session.
-2. **Fetch proxy** — keep thin Next.js route handlers that call this service
-   server-side, attaching the authenticated user id.
-
-Either way, leave `/api/auth/*` in Next.js. (Switching the frontend over is a
-follow-up; this service is drop-in compatible with the existing client calls.)
+In dev the web SPA's Vite proxy routes `/api/auth/*` → the auth-server and the
+rest of `/api/*` → this backend on one origin, so session cookies flow through.
 
 ## Tests
 
@@ -102,7 +101,7 @@ routing/fallback, and the read-only endpoints.
 
 ## Not ported (by design)
 
-- **Auth** — stays in Next.js / Better Auth.
+- **Auth** — runs in the standalone auth-server (`../auth-server`, Better Auth).
 - **Deterministic demo engine** (`src/lib/simulation/engine.ts`, `buildLedger`) —
   frontend-only replay code; the live backend builds its ledger incrementally.
 - **Real telephony/voice dialing** — kept as honored-kill-switch stubs, as today.

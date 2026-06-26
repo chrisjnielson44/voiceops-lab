@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { AudioWaveform, Loader2, ShieldCheck, Database, Cpu } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { signIn, signUp } from "@/lib/auth/client";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import Waves from "@/components/ui/backgrounds/Waves";
+import "@/components/ui/backgrounds/backgrounds.css";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { MicMark } from "@/components/ui/MicMark";
 
 type Mode = "signin" | "signup";
 
@@ -20,6 +24,8 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const reduce = useReducedMotion();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +48,14 @@ export function AuthScreen() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+      {/* Animated waves backdrop (ReactBits) */}
+      <div className="pointer-events-none absolute inset-0 z-0 opacity-70">
+        <Waves
+          lineColor={isDark ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.18)"}
+          backgroundColor="transparent"
+        />
+      </div>
       <div className="fixed right-4 top-4 z-10">
         <ThemeToggle />
       </div>
@@ -50,7 +63,7 @@ export function AuthScreen() {
         initial={reduce ? false : { opacity: 0, y: 14, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-md"
+        className="relative z-10 w-full max-w-md"
       >
         {/* Brand + signature mark */}
         <div className="mb-6 flex flex-col items-center text-center">
@@ -58,21 +71,14 @@ export function AuthScreen() {
             initial={reduce ? false : { opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-            className="relative mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-primary text-primary-foreground shadow-pop"
+            className="logo-mark liquid-glass relative mb-4 flex h-16 w-16 items-center justify-center rounded-2xl text-foreground shadow-pop"
           >
-            <motion.span
-              animate={reduce ? undefined : { rotate: [0, 8, -8, 0] }}
-              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-              className="relative"
-            >
-              <AudioWaveform className="h-8 w-8" />
-            </motion.span>
+            <MicMark className="h-9 w-9" />
           </motion.div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Voice Labs</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Voice-agent sandbox</p>
         </div>
 
-        <div className="glass rounded-3xl p-6 shadow-pop">
+        <div className="liquid-glass liquid-glass-edge rounded-3xl p-6 shadow-pop">
           <Tabs
             value={mode}
             onValueChange={(val) => {
@@ -94,7 +100,11 @@ export function AuthScreen() {
                   key="name-field"
                   initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
                   animate={reduce ? { opacity: 1 } : { opacity: 1, height: "auto" }}
-                  exit={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  exit={
+                    reduce
+                      ? { opacity: 0 }
+                      : { opacity: 0, height: 0, transition: { duration: 0.18, ease: "easeInOut" } }
+                  }
                   transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
                   className="overflow-hidden"
                 >
@@ -159,22 +169,7 @@ export function AuthScreen() {
             </Button>
           </form>
 
-          <div className="mt-5 flex items-center justify-center gap-4 border-t border-border pt-4 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5" /> Better Auth
-            </span>
-            <span className="flex items-center gap-1">
-              <Database className="h-3.5 w-3.5" /> Neon Postgres
-            </span>
-            <span className="flex items-center gap-1">
-              <Cpu className="h-3.5 w-3.5" /> Local model
-            </span>
-          </div>
         </div>
-
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Real sessions, real local inference. No PHI is real — all records are synthetic.
-        </p>
       </motion.div>
     </div>
   );

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Layers, Target } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -56,14 +57,16 @@ export function ScenariosView({ onNavigate }: { onNavigate: (path: string) => vo
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-end justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Scenarios</h1>
-        {data && (
-          <span className="text-sm text-muted-foreground">
-            {data.scenarios.length} scenarios · {packs.length} {packs.length === 1 ? "pack" : "packs"}
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title="Scenarios"
+        actions={
+          data && (
+            <span className="text-sm text-muted-foreground">
+              {data.scenarios.length} scenarios · {packs.length} {packs.length === 1 ? "pack" : "packs"}
+            </span>
+          )
+        }
+      />
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

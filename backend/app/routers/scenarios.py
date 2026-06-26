@@ -9,9 +9,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.packs.registry import all_scenarios, get_scenario
-from app.routers._deps import require_internal
+from app.routers._deps import require_internal, require_user
 
-router = APIRouter(prefix="/api", tags=["scenarios"], dependencies=[Depends(require_internal)])
+router = APIRouter(
+    prefix="/api",
+    tags=["scenarios"],
+    dependencies=[Depends(require_internal), Depends(require_user)],
+)
 
 
 @router.get("/scenarios")

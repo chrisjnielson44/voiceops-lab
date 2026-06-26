@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 /**
  * Dev proxy keeps everything same-origin so Better Auth cookies "just work":
- *   /api/auth/*  -> the Next.js auth host (Better Auth lives there)
+ *   /api/auth/*  -> the standalone auth-server (Better Auth lives there)
  *   /api/*       -> the FastAPI backend (call runtime, analytics, providers, ...)
  * In production, front the SPA with an ingress that routes those two prefixes
  * the same way. Override targets via VITE_AUTH_PROXY / VITE_API_PROXY.

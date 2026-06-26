@@ -109,7 +109,30 @@ export const useCallStore = create<CallState>((set, get) => ({
   playbackReveal: 0,
 
   setPlaybackReveal: (n) => set({ playbackReveal: n }),
-  setLiveInfo: (info) => set({ liveInfo: info, inSession: info ? true : get().inSession }),
+  setLiveInfo: (info) => {
+    if (!info) {
+      set({ liveInfo: null });
+      return;
+    }
+    set({
+      liveInfo: info,
+      inSession: true,
+      replay: false,
+      runId: info.runId,
+      status: "dialing",
+      phase: 0,
+      startedWallMs: Date.now(),
+      feed: [],
+      audit: [],
+      prediction: null,
+      predictionSet: null,
+      prefetch: {},
+      subgraph: null,
+      metrics: null,
+      error: null,
+      playbackReveal: 0,
+    });
+  },
 
   selectScenario: (id) => {
     const st = get();

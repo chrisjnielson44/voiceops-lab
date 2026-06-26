@@ -8,9 +8,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.db import query, query_one
-from app.routers._deps import require_internal
+from app.routers._deps import require_internal, require_user
 
-router = APIRouter(prefix="/api", tags=["analytics"], dependencies=[Depends(require_internal)])
+router = APIRouter(
+    prefix="/api",
+    tags=["analytics"],
+    dependencies=[Depends(require_internal), Depends(require_user)],
+)
 
 
 @router.get("/analytics")

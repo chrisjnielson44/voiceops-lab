@@ -1,8 +1,9 @@
 """
-Environment-driven configuration. Mirrors the variables the Next.js app already
-reads from `.env.local` so the two services can share one database and one local
-model server. Auth lives in Next.js; this service only trusts an upstream-set
-user header (see `routers/_deps.py`).
+Environment-driven configuration. Mirrors the variables the rest of the stack
+reads from `.env.local` so the services can share one database and one local
+model server. Auth lives in the standalone Better Auth server (../auth-server);
+this service validates the forwarded session cookie against it (see
+`routers/_deps.py`).
 """
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
     livekit_url: str | None = None
     livekit_api_key: str | None = None
     livekit_api_secret: str | None = None
+    livekit_agent_name: str = "voiceops-agent"
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     twilio_from_number: str | None = None
@@ -56,7 +58,7 @@ class Settings(BaseSettings):
     voiceops_prompt_version: str = "payer-ops-v4.0"
 
     # --- Service / auth boundary --------------------------------------------
-    # Comma-separated CORS allowlist; the Next.js origin in dev.
+    # Comma-separated CORS allowlist; the web SPA / auth-server origins in dev.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     # Optional shared secret a trusted proxy must send (x-internal-token).
     backend_internal_token: str | None = None

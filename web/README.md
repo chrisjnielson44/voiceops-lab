@@ -2,7 +2,8 @@
 
 The cockpit UI, migrated off Next.js to a **Vite + React SPA**. It talks to the
 **FastAPI backend** (`../backend`) for all app data + the live SSE call stream,
-and to the **Next.js app** (`../`) purely as the **Better Auth** host. Every
+and to the standalone **auth-server** (`../auth-server`) purely as the
+**Better Auth** host. Every
 component, the iOS-26 liquid-glass design system, and the data contracts are
 carried over unchanged — only the entry/shell and data-fetch plumbing changed.
 
@@ -23,7 +24,7 @@ smaller, faster bundle, and:
 ## Architecture
 
 ```
-Browser ─┬─ /api/auth/*  → Next.js (Better Auth, Neon)        ../  (port 3000)
+Browser ─┬─ /api/auth/*  → auth-server (Better Auth, Neon)    ../auth-server (3000)
          ├─ /api/agent/* → FastAPI  (SSE call runtime)        ../backend (8000)
          └─ /api/{analytics,providers,telephony,scenarios} → FastAPI
 ```
@@ -37,8 +38,8 @@ routes `/api/auth` → the auth host and `/api/*` → FastAPI on one origin.
 Three processes:
 
 ```bash
-# 1) Auth host (Better Auth) — from the repo root
-pnpm dev                       # Next.js on :3000  (only /api/auth/* is used)
+# 1) Auth host (Better Auth) — from ../auth-server
+npm run dev                    # auth-server on :3000  (serves /api/auth/*)
 
 # 2) Backend — from ../backend
 .venv/bin/uvicorn app.main:app --port 8000

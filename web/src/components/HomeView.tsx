@@ -17,7 +17,6 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import { motion } from "framer-motion";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -152,12 +151,7 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
   return (
     <div className="flex flex-col gap-7">
       {/* Greeting + primary actions */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-      >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <span className="logo-mark grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
             <Mic className="h-6 w-6" />
@@ -181,7 +175,7 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
             <Radio className="h-4 w-4" /> Run a simulation
           </Button>
         </div>
-      </motion.div>
+      </div>
 
       {/* KPI row */}
       <MotionStagger className="grid grid-cols-2 gap-4 lg:grid-cols-4">

@@ -7,6 +7,24 @@ beforeEach(() => {
 });
 
 describe("useCallStore._apply", () => {
+  it("starts a live session when LiveKit room info is set", () => {
+    const before = Date.now();
+    useCallStore.getState().setLiveInfo({
+      url: "wss://voiceops.test",
+      token: "token",
+      room: "voice_room",
+      runId: "voice_run",
+    });
+
+    const st = useCallStore.getState();
+    expect(st.inSession).toBe(true);
+    expect(st.replay).toBe(false);
+    expect(st.liveInfo?.room).toBe("voice_room");
+    expect(st.runId).toBe("voice_run");
+    expect(st.status).toBe("dialing");
+    expect(st.startedWallMs).toBeGreaterThanOrEqual(before);
+  });
+
   it("appends turns and tools to the feed in order", () => {
     const { _apply } = useCallStore.getState();
     _apply({ kind: "turn", turn: { id: "t-0", seq: 0, speaker: "agent", text: "hi", atMs: 10 } } as AgentEvent);

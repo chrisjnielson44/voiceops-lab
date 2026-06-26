@@ -5,6 +5,7 @@ import { Check, Cloud, Cpu, Server, Star, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,14 +57,16 @@ export function ModelsView({ onNavigate }: { onNavigate: (path: string) => void 
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-end justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Models</h1>
-        {providers?.localLLM && (
-          <StatusChip tone={localOk ? "green" : "red"} dot pulse={localOk}>
-            <Cpu className="h-3 w-3" /> {localOk ? "runtime online" : "runtime offline"}
-          </StatusChip>
-        )}
-      </div>
+      <PageHeader
+        title="Models"
+        actions={
+          providers?.localLLM && (
+            <StatusChip tone={localOk ? "green" : "red"} dot pulse={localOk}>
+              <Cpu className="h-3 w-3" /> {localOk ? "runtime online" : "runtime offline"}
+            </StatusChip>
+          )
+        }
+      />
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

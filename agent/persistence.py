@@ -35,7 +35,7 @@ class CallRecorder:
         self._conn = None
         if db_url:
             try:
-                self._conn = psycopg.connect(db_url, sslmode="require", autocommit=True)
+                self._conn = psycopg.connect(db_url, sslmode="require", autocommit=True, connect_timeout=5)
             except Exception:  # noqa: BLE001 - persistence is best-effort
                 self._conn = None
 

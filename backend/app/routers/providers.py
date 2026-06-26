@@ -10,12 +10,16 @@ from fastapi import APIRouter, Depends, Request
 from app.config import settings
 from app.llm.local_llm import local_llm_health
 from app.providers.router import get_all_provider_statuses, route_chat
-from app.routers._deps import require_internal
+from app.routers._deps import require_internal, require_user
 from app.schemas.providers import ChatCompletionRequest, ChatMessage
 from app.voice.registry import get_telephony_statuses, get_voice_statuses
 from app.voice.types import is_demo_mode
 
-router = APIRouter(prefix="/api", tags=["providers"], dependencies=[Depends(require_internal)])
+router = APIRouter(
+    prefix="/api",
+    tags=["providers"],
+    dependencies=[Depends(require_internal), Depends(require_user)],
+)
 
 
 @router.get("/providers")
