@@ -11,7 +11,7 @@ def test_registry_has_curated_cheap_fast_openrouter_models():
     # A representative slice of the cheap/fast lineup deployed users can pick.
     for expected in (
         "openai/gpt-4o-mini",
-        "google/gemini-2.0-flash-001",
+        "google/gemini-2.5-flash",
         "deepseek/deepseek-chat",
         "meta-llama/llama-3.1-8b-instruct",
         "qwen/qwen-2.5-7b-instruct",
