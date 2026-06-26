@@ -1,6 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4: single import replaces the v3 base/components/utilities directives.
+   `@config` keeps our existing TS config (custom colors/tokens, content globs). */
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 :root {
   /* Geist — modern technical typeface (loaded in index.html). The token keeps

@@ -17,7 +17,6 @@
     "useDefineForClassFields": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": false,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
