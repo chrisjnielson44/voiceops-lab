@@ -43,7 +43,7 @@ class HealthcarePack(Pack):
     async def execute_tool(self, tool: str, args: dict, ctx: ToolContext) -> ToolResult:
         return await execute_tool(tool, args, ctx)
 
-    def tool_context(self, *, run_id: str, scenario: Scenario, transcript: str) -> ToolContext:
+    def tool_context(self, *, run_id: str, scenario: Scenario, transcript: str, model: str | None = None) -> ToolContext:
         return ToolContext(
             run_id=run_id,
             scenario_id=scenario.id,
@@ -51,6 +51,7 @@ class HealthcarePack(Pack):
             claim_id=scenario.claim.id if (scenario.category == "claim-status" and scenario.claim) else None,
             auth_id=scenario.claim.id if (scenario.category == "prior-auth" and scenario.claim) else None,
             transcript=transcript,
+            model=model,
         )
 
     async def build_graph(self, scenario: Scenario) -> ContextGraph | None:
@@ -68,6 +69,33 @@ class HealthcarePack(Pack):
         if any(k in i for k in ("lookup", "identify", "authenticate", "verify_member")):
             return ("lookup_patient", {"member_id": mid})
         return None
+
+    def anticipated_records(self, predictions: list, scenario: Scenario) -> list[tuple[str, str, str]]:
+        """Resolve each anticipated intent to the graph node holding the record
+        its read tool would fetch (reusing `predicted_tool_for` so there is one
+        intent→tool map). Deduped by node, confidence order preserved."""
+        node_for_tool = {
+            "verify_eligibility": lambda a: f"coverage:{a.get('member_id')}",
+            "verify_claim": lambda a: f"claim:{a.get('claim_id')}",
+            "lookup_patient": lambda a: f"member:{a.get('member_id')}",
+        }
+        out: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for p in predictions:
+            intent = (getattr(p, "intent", "") or "").strip()
+            mapping = self.predicted_tool_for(getattr(p, "needs_tool", None) or intent, scenario)
+            if not mapping:
+                continue
+            tool, args = mapping
+            resolver = node_for_tool.get(tool)
+            if not resolver:
+                continue
+            nid = resolver(args)
+            if not nid or nid in seen:
+                continue
+            seen.add(nid)
+            out.append((intent or tool, tool, nid))
+        return out
 
     def sensitive_scope(self, scenario: Scenario) -> str | None:
         mid = scenario.patient.member_id

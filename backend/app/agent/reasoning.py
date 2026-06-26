@@ -53,7 +53,10 @@ def narrate_predictions(
     warmed_intents: set[str] | None = None,
 ) -> ReasoningSegment | None:
     """Narrate prediction weighing: the ranked candidates the agent anticipated
-    last exchange and which had their read tools speculatively warmed."""
+    last exchange and which had their record pre-loaded for the next exchange —
+    via the speculative tool cache (simulate) or folded into the agent's grounding
+    (live). Either way the agent can answer the anticipated request without a
+    fresh lookup; `warmed_intents` marks which candidates were pre-loaded."""
     if pred_set is None or not pred_set.predictions:
         return None
     warmed_intents = warmed_intents or set()
@@ -75,7 +78,7 @@ def narrate_predictions(
         )
     text = "Anticipated the next exchange — weighed " + "; ".join(parts) + "."
     if any(i["warmed"] for i in items):
-        text += " Warmed the cache for the most likely read so the next tool call returns instantly."
+        text += " Pre-loaded the most likely record so the agent can answer that request without a fresh lookup."
     return ReasoningSegment(phase="anticipate", title="Weighed predictions", text=text, predictions=items)
 
 

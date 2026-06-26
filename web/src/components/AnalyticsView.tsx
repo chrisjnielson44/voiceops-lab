@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useReducedMotion } from "framer-motion";
 import { Table2, PieChart as PieIcon, BarChart3, Cpu, Download, Inbox, Loader2 } from "lucide-react";
 
 import {
@@ -75,7 +77,7 @@ export function AnalyticsView() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Operations analytics"
+        title="Analytics"
         actions={
           data?.hasData && (
             <Button variant="outline" size="sm" onClick={() => exportCsv(payers, models)}>
@@ -239,6 +241,19 @@ function PerfTable<T extends Row>({
   labelOf: (r: T) => string;
   mono?: boolean;
 }) {
+  // Grow the completion bars from 0 on mount so the table feels alive when the
+  // data lands. Reduced-motion users get the final value immediately.
+  const reduce = useReducedMotion();
+  const [grown, setGrown] = useState(false);
+  useEffect(() => {
+    if (reduce) {
+      setGrown(true);
+      return;
+    }
+    const id = requestAnimationFrame(() => setGrown(true));
+    return () => cancelAnimationFrame(id);
+  }, [reduce]);
+
   return (
     <div className="scroll-thin overflow-x-auto">
       <table className="w-full min-w-[520px] text-sm">
@@ -259,9 +274,12 @@ function PerfTable<T extends Row>({
               <td className="px-4 py-2.5">
                 <div className="flex items-center gap-2">
                   <Progress
-                    value={r.completionRate * 100}
+                    value={grown ? r.completionRate * 100 : 0}
                     className="h-1.5 w-16"
-                    indicatorClassName={r.completionRate >= 0.85 ? "bg-emerald-500" : "bg-amber-500"}
+                    indicatorClassName={cn(
+                      "duration-700 ease-out",
+                      r.completionRate >= 0.85 ? "bg-emerald-500" : "bg-amber-500",
+                    )}
                   />
                   <span className="tabular text-xs text-muted-foreground">{formatPercent(r.completionRate)}</span>
                 </div>

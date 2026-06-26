@@ -11,10 +11,12 @@ import {
   Mic,
   Moon,
   Plug,
+  Radio,
   ScrollText,
   Settings as SettingsIcon,
   Sparkles,
   Sun,
+  Users,
 } from "lucide-react";
 
 import {
@@ -39,7 +41,8 @@ interface ScenarioOpt {
 
 const NAV = [
   { path: "/", label: "Home", icon: <Home /> },
-  { path: "/studio", label: "Studio", icon: <Sparkles /> },
+  { path: "/simulate", label: "Simulation", icon: <Sparkles /> },
+  { path: "/live", label: "Live", icon: <Radio /> },
   { path: "/scenarios", label: "Scenarios", icon: <Layers /> },
   { path: "/voices", label: "Voices", icon: <AudioLines /> },
   { path: "/models", label: "Models", icon: <Boxes /> },
@@ -49,7 +52,15 @@ const NAV = [
   { path: "/integrations", label: "Integrations", icon: <Plug /> },
 ];
 
-export function CommandPalette({ navigate }: { navigate: (path: string) => void }) {
+const ADMIN_NAV = [{ path: "/team", label: "Team", icon: <Users /> }];
+
+export function CommandPalette({
+  navigate,
+  isAdmin = false,
+}: {
+  navigate: (path: string) => void;
+  isAdmin?: boolean;
+}) {
   const { commandOpen, setCommandOpen, openSettings, setPlaygroundDefaults } = useSettings();
   const { resolvedTheme, setTheme } = useTheme();
 
@@ -76,7 +87,7 @@ export function CommandPalette({ navigate }: { navigate: (path: string) => void 
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Navigation">
-          {NAV.map((n) => (
+          {[...NAV, ...(isAdmin ? ADMIN_NAV : [])].map((n) => (
             <CommandItem key={n.path} value={`go ${n.label}`} onSelect={() => run(() => navigate(n.path))}>
               {n.icon}
               <span>{n.label}</span>
@@ -95,7 +106,7 @@ export function CommandPalette({ navigate }: { navigate: (path: string) => void 
                   onSelect={() =>
                     run(() => {
                       setPlaygroundDefaults({ scenarioId: s.id });
-                      navigate("/studio");
+                      navigate("/simulate");
                     })
                   }
                 >

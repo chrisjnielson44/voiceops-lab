@@ -97,8 +97,14 @@ async def test_control_rejects_unknown_action(client, fake_pool, fake_llm):
 async def test_scenarios_endpoint(client):
     r = await client.get("/api/scenarios")
     assert r.status_code == 200
-    ids = [s["id"] for s in r.json()["scenarios"]]
-    assert ids == ["elig-aetna", "claim-uhc", "pa-cigna"]
+    scenarios = r.json()["scenarios"]
+    ids = [s["id"] for s in scenarios]
+    # Healthcare scenarios lead the catalog (custom scenarios, if any, trail it).
+    assert ids[:3] == ["elig-aetna", "claim-uhc", "pa-cigna"]
+    # Each scenario advertises its owning pack + a custom flag.
+    healthcare = next(s for s in scenarios if s["id"] == "elig-aetna")
+    assert healthcare["pack"] == "healthcare" and healthcare["custom"] is False
+    assert any(s["pack"] == "banking" for s in scenarios)
 
     one = await client.get("/api/scenarios/claim-uhc")
     assert one.json()["payer"] == "UnitedHealthcare"
@@ -132,7 +138,8 @@ async def test_voice_options(client, monkeypatch):
     r = await client.get("/api/voice/options")
     assert r.status_code == 200
     body = r.json()
-    assert len(body["scenarios"]) == 3
+    # Built-in domain packs: healthcare (3) + banking (3) + telecom (3).
+    assert len(body["scenarios"]) == 9
     assert all(s["id"] and s["objective"] for s in body["scenarios"])
     assert len(body["models"]) >= 1
     assert len(body["voices"]) >= 1

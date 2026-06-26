@@ -1,6 +1,7 @@
 "use client";
 
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
+import { useReducedMotion } from "framer-motion";
 
 export interface OutcomeSlice {
   label: string;
@@ -13,6 +14,7 @@ export interface OutcomeSlice {
  * "Resolved" (completed) share.
  */
 export function OutcomeDonut({ data }: { data: OutcomeSlice[] }) {
+  const reduce = useReducedMotion();
   const resolved = data.find((d) => d.label === "Resolved")?.value ?? 0;
 
   return (
@@ -29,7 +31,9 @@ export function OutcomeDonut({ data }: { data: OutcomeSlice[] }) {
             stroke="transparent"
             startAngle={90}
             endAngle={-270}
-            isAnimationActive={false}
+            isAnimationActive={!reduce}
+            animationDuration={800}
+            animationEasing="ease-out"
           >
             {data.map((slice) => (
               <Cell key={slice.label} fill={slice.color} />

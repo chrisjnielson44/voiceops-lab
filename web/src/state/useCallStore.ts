@@ -11,6 +11,31 @@ export type FeedItem =
   | { kind: "tool"; tool: LiveTool }
   | { kind: "reasoning"; reasoning: LiveReasoning };
 
+function feedId(it: FeedItem): string {
+  return it.kind === "turn" ? it.turn.id : it.kind === "tool" ? it.tool.id : it.reasoning.id;
+}
+
+/** Sort key so the feed is deterministic regardless of SSE arrival order. Items
+ *  share `seq` with the turn/tool they relate to; a reasoning block precedes its
+ *  turn/tool at the same seq (rank 0 vs 1). */
+function feedRank(it: FeedItem): number {
+  const seq = it.kind === "turn" ? it.turn.seq : it.kind === "tool" ? it.tool.seq : it.reasoning.seq;
+  const tie = it.kind === "reasoning" ? 0 : 1;
+  return seq * 2 + tie;
+}
+
+/** Upsert by id and keep the feed ordered by (seq, rank): de-dupes a replayed or
+ *  re-delivered event and slots a late one into its correct place. */
+function placeFeed(feed: FeedItem[], item: FeedItem): FeedItem[] {
+  const id = feedId(item);
+  const next = feed.filter((f) => feedId(f) !== id);
+  const rank = feedRank(item);
+  let i = next.findIndex((f) => feedRank(f) > rank);
+  if (i === -1) i = next.length;
+  next.splice(i, 0, item);
+  return next;
+}
+
 export type StudioMode = "simulate" | "live";
 
 export interface LiveInfo {
@@ -33,6 +58,10 @@ interface CallState {
   // Studio and returning restores the running/finished session. `replay` marks a
   // read-only session re-opened from Call History.
   inSession: boolean;
+  // Which surface OWNS the active session — so /simulate and /live each only show
+  // their own run (not whatever happens to be live). `mode` is just the pre-config
+  // selector; `sessionMode` is what the running session actually is.
+  sessionMode: StudioMode | null;
   liveInfo: LiveInfo | null;
   replay: boolean;
 
@@ -48,14 +77,19 @@ interface CallState {
   // player advances this in lockstep with the read-aloud so the conversation
   // never runs ahead of the audio; when off it's pinned to feed.length.
   playbackReveal: number;
+  // Text role-play: true while the agent has paused for the human (playing the
+  // payer rep) to type a reply. Drives the reply bar.
+  awaitingPayer: boolean;
 
   selectScenario: (id: string) => void;
   setMode: (m: StudioMode) => void;
   selectModel: (id: string) => void;
   setPlaybackReveal: (n: number) => void;
   setLiveInfo: (info: LiveInfo | null) => void;
-  start: () => Promise<void>;
-  openSession: (runId: string) => void;
+  start: (opts?: { humanPayer?: boolean }) => Promise<void>;
+  say: (text: string) => Promise<void>;
+  openSession: (runId: string, mode?: StudioMode) => void;
+  attachLiveStream: (runId: string) => void;
   endSession: () => void;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -95,6 +129,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   model: "",
 
   inSession: false,
+  sessionMode: null,
   liveInfo: null,
   replay: false,
 
@@ -107,6 +142,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   metrics: null,
   error: null,
   playbackReveal: 0,
+  awaitingPayer: false,
 
   setPlaybackReveal: (n) => set({ playbackReveal: n }),
   setLiveInfo: (info) => {
@@ -117,6 +153,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     set({
       liveInfo: info,
       inSession: true,
+      sessionMode: "live",
       replay: false,
       runId: info.runId,
       status: "dialing",
@@ -159,13 +196,14 @@ export const useCallStore = create<CallState>((set, get) => ({
   setMode: (m) => set({ mode: m }),
   selectModel: (id) => set({ model: id }),
 
-  start: async () => {
+  start: async (opts) => {
     const st = get();
     if (st.status === "active" || st.status === "dialing") return;
     closeStream();
     set({
       status: "dialing",
       inSession: true,
+      sessionMode: st.mode, // the page forced `mode` to its route before launch
       replay: false,
       feed: [],
       audit: [],
@@ -176,6 +214,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       metrics: null,
       error: null,
       playbackReveal: 0,
+      awaitingPayer: false,
       startedWallMs: Date.now(),
     });
 
@@ -183,7 +222,11 @@ export const useCallStore = create<CallState>((set, get) => ({
       const res = await fetch("/api/agent/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId: st.scenarioId, model: st.model || undefined }),
+        body: JSON.stringify({
+          scenarioId: st.scenarioId,
+          model: st.model || undefined,
+          humanPayer: opts?.humanPayer ?? false,
+        }),
       });
       if (res.status === 401) {
         set({ status: "idle", error: "Please sign in to start a call." });
@@ -215,15 +258,30 @@ export const useCallStore = create<CallState>((set, get) => ({
     }
   },
 
+  // Text role-play: submit the human's reply (they play the payer rep). The
+  // backend hands it to the paused orchestrator, which resumes the agent's turn.
+  say: async (text) => {
+    const { runId } = get();
+    const body = text.trim();
+    if (!runId || !body) return;
+    set({ awaitingPayer: false });
+    await fetch("/api/agent/say", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId, text: body }),
+    }).catch(() => {});
+  },
+
   // Re-open a stored (or still-live) session by id and replay its full event
   // stream. The backend replays from memory, or from the persisted event_stream
   // once the run has been evicted — so historical calls render in full.
-  openSession: (runId) => {
+  openSession: (runId, mode = "simulate") => {
     closeStream();
     set({
       runId,
       status: "active",
       inSession: true,
+      sessionMode: mode,
       replay: true,
       phase: 0,
       startedWallMs: Date.now(),
@@ -248,12 +306,33 @@ export const useCallStore = create<CallState>((set, get) => ({
     es.onerror = () => closeStream();
   },
 
+  // Attach to a LIVE voice run's SSE without resetting state or POSTing /start.
+  // The audio rides on LiveKit (handled in the view); this stream carries the
+  // backend bridge's enrichment — turns, tools, reasoning, graph, predictions —
+  // so the cockpit lights up exactly like simulate. `setLiveInfo` already seeded
+  // the session state, so this is purely additive.
+  attachLiveStream: (runId) => {
+    closeStream();
+    es = new EventSource(`/api/agent/stream?runId=${encodeURIComponent(runId)}`);
+    es.onmessage = (ev) => {
+      try {
+        get()._apply(JSON.parse(ev.data) as AgentEvent);
+      } catch {
+        /* ignore malformed frame */
+      }
+    };
+    // The live audio session is independent of this stream, so a transient SSE
+    // error shouldn't tear down the call — just stop consuming enrichment.
+    es.onerror = () => closeStream();
+  },
+
   endSession: () => {
     const { runId, replay } = get();
     if (runId && !replay) control(runId, "stop");
     closeStream();
     set({
       inSession: false,
+      sessionMode: null,
       liveInfo: null,
       replay: false,
       runId: null,
@@ -269,6 +348,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       metrics: null,
       error: null,
       playbackReveal: 0,
+      awaitingPayer: false,
     });
   },
 
@@ -301,6 +381,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       runId: null,
       status: "idle",
       inSession: false,
+      sessionMode: null,
       liveInfo: null,
       replay: false,
       phase: 0,
@@ -323,20 +404,15 @@ export const useCallStore = create<CallState>((set, get) => ({
         set((s) => ({ status: s.status === "paused" && e.status === "active" ? "paused" : e.status, phase: e.phase }));
         break;
       case "turn":
-        set((s) => ({ feed: [...s.feed, { kind: "turn", turn: e.turn }] }));
+        set((s) => ({ feed: placeFeed(s.feed, { kind: "turn", turn: e.turn }) }));
         break;
       case "tool":
-        set((s) => ({ feed: [...s.feed, { kind: "tool", tool: e.tool }] }));
+        set((s) => ({ feed: placeFeed(s.feed, { kind: "tool", tool: e.tool }) }));
         break;
       case "reasoning":
-        // Streamed: upsert by id so the trace grows in place (one block per turn).
-        set((s) => {
-          const idx = s.feed.findIndex((f) => f.kind === "reasoning" && f.reasoning.id === e.reasoning.id);
-          if (idx === -1) return { feed: [...s.feed, { kind: "reasoning", reasoning: e.reasoning }] };
-          const feed = s.feed.slice();
-          feed[idx] = { kind: "reasoning", reasoning: e.reasoning };
-          return { feed };
-        });
+        // Streamed: upsert by id (placeFeed replaces same-id) so the trace grows
+        // in place and stays ordered ahead of the turn it precedes.
+        set((s) => ({ feed: placeFeed(s.feed, { kind: "reasoning", reasoning: e.reasoning }) }));
         break;
       case "prediction":
         set({ prediction: e.prediction });
@@ -359,8 +435,12 @@ export const useCallStore = create<CallState>((set, get) => ({
       case "error":
         set({ error: e.message });
         break;
+      case "await":
+        set({ awaitingPayer: e.awaiting });
+        break;
       case "done":
         closeStream();
+        set({ awaitingPayer: false });
         if (e.outcome === "stopped") set((s) => ({ status: s.status === "completed" || s.status === "escalated" ? s.status : "idle" }));
         break;
     }

@@ -22,6 +22,9 @@ class ToolContext:
     claim_id: str | None = None
     auth_id: str | None = None
     transcript: str | None = None
+    # The run's selected model, so model-backed tools (summarize) route to the
+    # same provider (e.g. OpenRouter) the rest of the call uses. None → local.
+    model: str | None = None
 
 
 @dataclass
@@ -37,6 +40,7 @@ TOOL_CATALOG: list[dict[str, str]] = [
     {"name": "verify_eligibility", "description": "Get active coverage, plan, copays, deductible, and OOP accumulators.", "args": "member_id (string)"},
     {"name": "verify_claim", "description": "Get a claim's adjudication status, denial reason, and resubmission path.", "args": "claim_id (string)"},
     {"name": "record_status", "description": "Write the verified outcome/fields back to the encounter.", "args": "summary (string), fields (object)"},
+    {"name": "note_fact", "description": "Jot a fact the rep gives you onto your live call notes (e.g. their name, a reference/confirmation number, a verbal determination, a callback time) so you can refer back to it later in the call and it's on the record.", "args": "label (string), value (string)"},
     {"name": "escalate", "description": "Route to a human specialist when the call cannot be completed autonomously.", "args": "reason (string)"},
     {"name": "summarize", "description": "Produce the final encounter summary from the transcript.", "args": "(none)"},
 ]
@@ -131,6 +135,19 @@ async def execute_tool(tool: str, args: dict[str, Any], ctx: ToolContext) -> Too
             {"recorded": args.get("fields") or {}, "summary": summary},
         )
 
+    if tool == "note_fact":
+        label = _str(args.get("label")) or "note"
+        value = _str(args.get("value")) or _str(args.get("note")) or ""
+        kind = _str(args.get("kind")) or "note"
+        # Not a DB read — a conversational fact the agent chooses to remember. Not
+        # patient PHI (it's an operational note), so no PHI scope/redaction.
+        return ToolResult(
+            f"Noted — {label}: {value}." if value else f"Noted — {label}.",
+            "ok",
+            False,
+            {"label": label, "value": value, "kind": kind, "note": True},
+        )
+
     if tool == "escalate":
         reason = _str(args.get("reason")) or "criteria require human review"
         return ToolResult(
@@ -149,6 +166,7 @@ async def execute_tool(tool: str, args: dict[str, Any], ctx: ToolContext) -> Too
             ],
             temperature=0.2,
             max_tokens=200,
+            model=ctx.model,
         )
         text = r.text.strip()
         return ToolResult(text or "Summary generated.", "ok", False, {"summary": text})

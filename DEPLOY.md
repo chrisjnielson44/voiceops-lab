@@ -36,23 +36,35 @@ flyctl secrets set --app voiceops-auth \
   BETTER_AUTH_TRUSTED_ORIGINS="https://<your-vercel-domain>" \
   AUTH_CORS_ORIGINS="https://<your-vercel-domain>"
 flyctl deploy --app voiceops-auth
-flyctl ssh console --app voiceops-auth -C "node migrate.mjs"   # once
+flyctl ssh console --app voiceops-auth -C "node migrate.mjs"     # once — creates org/team/role tables
+flyctl ssh console --app voiceops-auth -C "ADMIN_PASSWORD='choose-a-strong-one' node seed-admin.mjs"  # once
 
-# backend secrets — validates the session via the auth app over Fly private net
+# backend secrets — validates the session via the auth app over Fly private net.
+# LiveKit + ElevenLabs + OpenRouter are loaded here so hosted users get voice +
+# the curated cheap/fast OpenRouter model catalog.
 cd ../backend
 flyctl secrets set --app voiceops-api \
   DATABASE_URL_UNPOOLED="postgres://...neon..." \
   REQUIRE_AUTH="true" \
   AUTH_SERVER_URL="http://voiceops-auth.internal:3000" \
   CORS_ORIGINS="https://<your-vercel-domain>" \
-  LOCAL_LLM_BASE_URL="..." LOCAL_LLM_MODEL="..." LOCAL_LLM_API_KEY="..."
+  OPENROUTER_API_KEY="sk-or-..." \
+  ELEVENLABS_API_KEY="..." \
+  LIVEKIT_URL="wss://....livekit.cloud" LIVEKIT_API_KEY="..." LIVEKIT_API_SECRET="..." \
+  BACKEND_INTERNAL_TOKEN="$(openssl rand -hex 16)"
 flyctl deploy --app voiceops-api   # release_command runs `alembic upgrade head`
-flyctl ssh console --app voiceops-api -C "python scripts/setup_db.py"   # seed once
+flyctl ssh console --app voiceops-api -C "python scripts/setup_db.py"   # seed payer data once
 ```
 
-> The local MLX model server isn't reachable from Fly. For the hosted demo, point
-> `LOCAL_LLM_*` at a reachable OpenAI-compatible endpoint (or set `OPENROUTER_API_KEY`
-> and use a hosted model) so live calls work off your laptop.
+> **Sign-up is disabled.** Only accounts created by an admin can log in. `seed-admin.mjs`
+> bootstraps the first admin (`cjnielson44@gmail.com`) + the **VoiceAdmin** org & team;
+> after that, the admin provisions users from the in-app **Team** page (admin-only).
+> Re-running the seed is safe (idempotent).
+>
+> **Models.** With `OPENROUTER_API_KEY` set, the curated cheap/fast OpenRouter models
+> (`backend/app/providers/registry.py`) appear automatically in the picker — no local
+> model server needed for the hosted demo. `LOCAL_LLM_*` only matters if you self-host
+> the backend next to a reachable OpenAI-compatible server (MLX/Ollama).
 
 ## 2. Vercel (SPA)
 
@@ -74,4 +86,8 @@ flyctl ssh console --app voiceops-api -C "python scripts/setup_db.py"   # seed o
   files are committed.
 - The backend enforces auth in prod (`REQUIRE_AUTH=true`): it introspects the
   forwarded session cookie against the auth app and 401s without a valid session.
-- Auth tables: `npm run migrate` in `auth-server` (idempotent).
+  Admin-only surfaces additionally require `user.role === "admin"`.
+- Auth tables: `npm run migrate` in `auth-server` (idempotent). Then
+  `npm run seed:admin` to create the admin + VoiceAdmin workspace.
+- Provisioning new users goes through `/api/auth/provision-user` (admin-gated,
+  same-origin), since Better Auth's org `addMember` is a server-only endpoint.

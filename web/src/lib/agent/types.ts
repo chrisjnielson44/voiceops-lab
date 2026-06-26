@@ -9,6 +9,10 @@ export interface LiveTurn {
   text: string;
   atMs: number;
   latencyMs?: number;
+  /** Verified records the context graph fed into this (agent) turn. */
+  grounded?: number | null;
+  /** Of those, how many were pre-loaded by anticipation. */
+  anticipated?: number | null;
 }
 
 export interface LiveTool {
@@ -71,6 +75,7 @@ export type AgentEvent =
   | { kind: "audit"; event: AuditEvent }
   | { kind: "metrics"; metrics: RunMetrics }
   | { kind: "error"; message: string }
+  | { kind: "await"; awaiting: boolean; role: string }
   | { kind: "done"; outcome: "completed" | "escalated" | "stopped" };
 
 export interface AgentDecision {

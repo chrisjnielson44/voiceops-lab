@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, Cloud, Cpu, Server, Star, Zap } from "lucide-react";
 import { toast } from "sonner";
 
+import { getModelProvider } from "@/lib/modelProvider";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,8 @@ interface VoiceOptions {
 function shortId(id: string): string {
   return (id.split("/").pop() ?? id).replace(/-4bit$/i, "").replace(/-Instruct/i, "");
 }
+
+// ── View ──────────────────────────────────────────────────────────────────────
 
 export function ModelsView({ onNavigate }: { onNavigate: (path: string) => void }) {
   const playgroundDefaults = useSettings((s) => s.playgroundDefaults);
@@ -52,7 +55,7 @@ export function ModelsView({ onNavigate }: { onNavigate: (path: string) => void 
   };
   const use = (m: ModelOpt) => {
     setPlaygroundDefaults({ model: m.id });
-    onNavigate("/studio");
+    onNavigate("/simulate");
   };
 
   return (
@@ -69,59 +72,78 @@ export function ModelsView({ onNavigate }: { onNavigate: (path: string) => void 
       />
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i} className="h-44">
-              <CardContent className="flex flex-col gap-3 p-5">
-                <div className="flex items-start justify-between">
-                  <Skeleton className="h-10 w-10 rounded-xl" />
-                  <Skeleton className="h-5 w-20 rounded-full" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="flex flex-col gap-3 p-4">
+                <div className="flex items-center gap-2.5">
+                  <Skeleton className="h-9 w-9 rounded-lg" />
+                  <div className="flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-2.5 w-16" />
+                  </div>
                 </div>
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-3 w-40" />
-                <Skeleton className="mt-auto h-9 w-full" />
+                <Skeleton className="h-8 w-full rounded-lg" />
               </CardContent>
             </Card>
           ))}
         </div>
       ) : (
-        <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <MotionStagger className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {models.map((m) => {
             const isLocal = m.kind === "local";
             const isDefault = m.id === defaultModel;
+            const provider = getModelProvider(m.id, isLocal);
             return (
-              <MotionItem key={m.id} whileHover={{ y: -3 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
-                <Card className={cn("group flex h-full flex-col", isDefault && "ring-1 ring-brand-500/40")}>
-                  <CardContent className="flex flex-1 flex-col gap-3 p-5">
-                    <div className="flex items-start justify-between gap-2">
-                      <span
-                        className={cn(
-                          "grid h-10 w-10 shrink-0 place-items-center rounded-xl",
-                          isLocal ? "bg-violet-500/10 text-violet-500" : "bg-brand-500/10 text-brand-500",
-                        )}
-                      >
-                        {isLocal ? <Server className="h-5 w-5" /> : <Cloud className="h-5 w-5" />}
+              <MotionItem key={m.id} whileHover={{ y: -2 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
+                <Card
+                  className={cn(
+                    "group flex h-full flex-col transition-colors",
+                    isDefault && "ring-1 ring-brand-500/40",
+                  )}
+                >
+                  <CardContent className="flex flex-1 flex-col gap-3 p-4">
+                    {/* Identity: logo + name + provider */}
+                    <div className="flex items-start gap-2.5">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted/60 ring-1 ring-inset ring-border/60">
+                        {provider.logo}
                       </span>
-                      <StatusChip tone={isLocal ? "violet" : "blue"}>
-                        {isLocal ? "MLX · local" : "hosted"}
-                      </StatusChip>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="truncate text-sm font-semibold text-foreground">{shortId(m.id)}</h3>
-                        {isDefault && <Star className="h-3.5 w-3.5 shrink-0 fill-brand-500 text-brand-500" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="truncate text-sm font-semibold text-foreground">{shortId(m.id)}</h3>
+                          {isDefault && <Star className="h-3 w-3 shrink-0 fill-brand-500 text-brand-500" />}
+                        </div>
+                        <p className="truncate text-xs text-muted-foreground">{provider.name}</p>
                       </div>
-                      <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{m.id}</p>
                     </div>
 
-                    {isLocal && (
-                      <StatusChip tone={localOk ? "green" : "red"} dot>
-                        {localOk ? "ready" : "offline"}
-                      </StatusChip>
-                    )}
+                    {/* Meta: status + environment */}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {isLocal ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              localOk ? "bg-emerald-500" : "bg-red-500",
+                            )}
+                          />
+                          {localOk ? "ready" : "offline"}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+                          hosted
+                        </span>
+                      )}
+                      <span className="text-border">·</span>
+                      <span className="inline-flex items-center gap-1">
+                        {isLocal ? <Server className="h-3 w-3" /> : <Cloud className="h-3 w-3" />}
+                        {isLocal ? "MLX local" : "cloud"}
+                      </span>
+                    </div>
 
-                    <div className="mt-auto flex gap-2 pt-1">
+                    {/* Actions */}
+                    <div className="mt-auto flex gap-2 pt-0.5">
                       <Button variant="outline" size="sm" className="flex-1" onClick={() => use(m)}>
                         <Zap className="h-3.5 w-3.5" /> Use
                       </Button>
@@ -143,7 +165,6 @@ export function ModelsView({ onNavigate }: { onNavigate: (path: string) => void 
         </MotionStagger>
       )}
 
-      {/* Provider configuration — what's live and what needs env to go online. */}
       {providers?.llm && providers.llm.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">Providers</h2>

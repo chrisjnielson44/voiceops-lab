@@ -10,7 +10,6 @@ import {
   VoiceAssistantControlBar,
   useVoiceAssistant,
   useConnectionState,
-  useTranscriptions,
 } from "@livekit/components-react";
 import { ConnectionState } from "livekit-client";
 import "@livekit/components-styles";
@@ -28,22 +27,23 @@ import {
   Play,
   Plus,
   Radio,
+  Send,
   ShieldCheck,
   Sparkles,
   Square,
   User,
   Volume2,
-  VolumeX,
   Wrench,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { useCallStore, type LiveInfo } from "@/state/useCallStore";
+import { useCallStore, type LiveInfo, type StudioMode } from "@/state/useCallStore";
 import { useSettings } from "@/state/useSettings";
 import { useScenario } from "@/state/useScenario";
 import { PHASES } from "@/lib/simulation/engine";
 import type { CallStatus } from "@/lib/simulation/types";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -51,10 +51,12 @@ import { StatusChip, type Tone } from "@/components/ui/StatusChip";
 import { PredictivePanel } from "@/components/PredictivePanel";
 import { AuditLedger } from "@/components/AuditLedger";
 import { ContextGraphView } from "@/components/ContextGraphView";
-import { StudioTranscript, type LiveMessage } from "@/components/StudioTranscript";
+import { StudioTranscript } from "@/components/StudioTranscript";
+import { Suggestions } from "@/components/ai/activity";
 import { StudioSidecar } from "@/components/StudioSidecar";
 import { SimVoicePlayer } from "@/components/SimVoicePlayer";
 import { PreConfigView, type VoiceOptions, type ScenarioOpt } from "@/components/PreConfigView";
+import { RoleCard } from "@/components/RoleCard";
 import { cn } from "@/lib/cn";
 import { formatClock } from "@/lib/format";
 
@@ -87,6 +89,33 @@ function promptFor(s: ScenarioOpt): string {
   ].join("\n");
 }
 
+/**
+ * Pick the right default model for a mode. Live voice is a real-time loop, so it
+ * defaults to a FAST non-reasoning model (a reasoning model's hidden CoT adds
+ * seconds per turn — unbearable on a call, and LiveKit strips the CoT anyway).
+ * Simulate keeps the reasoning default so its streamed chain-of-thought is the
+ * star of the show.
+ */
+function defaultModelFor(
+  mode: StudioMode,
+  transport: LiveTransport,
+  options: VoiceOptions,
+  playgroundModel: string | undefined,
+): string {
+  // Only the live VOICE call wants a fast non-reasoning model (real-time, and
+  // LiveKit strips CoT anyway). Simulate and text role-play both stream the
+  // agent's chain-of-thought, so they default to the reasoning model.
+  if (mode === "live" && transport === "voice") {
+    const byId = (id?: string) => (id ? options.models.find((m) => m.id === id) : undefined);
+    const fast =
+      byId(options.defaults.fastModel) ??
+      options.models.find((m) => m.kind === "local" && !m.reasoning) ??
+      options.models.find((m) => !m.reasoning);
+    return fast?.id ?? options.defaults.model;
+  }
+  return playgroundModel || options.defaults.model;
+}
+
 function useElapsedMs(startedWallMs: number | null, status: CallStatus): number {
   const [now, setNow] = useState(() => Date.now());
   const live = status === "active" || status === "dialing" || status === "paused";
@@ -106,7 +135,20 @@ function useElapsedMs(startedWallMs: number | null, status: CallStatus): number 
  * mind" sidecar. Full Predictive / Graph / Audit live in a drawer. Simulate runs
  * a real two-model loop; Live voice runs the same agent over LiveKit.
  */
-export function StudioView() {
+/** Live participation: the human plays the payer rep either by typing
+ *  (text role-play, agent leads over the same loop as simulate) or by voice
+ *  (LiveKit). */
+export type LiveTransport = "text" | "voice";
+
+/** Mode-locked entry points for the two routes (/simulate, /live). */
+export function SimulateView() {
+  return <StudioView initialMode="simulate" />;
+}
+export function LiveView() {
+  return <StudioView initialMode="live" />;
+}
+
+export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   const mode = useCallStore((s) => s.mode);
   const setMode = useCallStore((s) => s.setMode);
   const scenarioId = useCallStore((s) => s.scenarioId);
@@ -116,14 +158,20 @@ export function StudioView() {
   const status = useCallStore((s) => s.status);
   const error = useCallStore((s) => s.error);
   const start = useCallStore((s) => s.start);
+  const say = useCallStore((s) => s.say);
+  const awaitingPayer = useCallStore((s) => s.awaitingPayer);
+  const predictionSet = useCallStore((s) => s.predictionSet);
   const playbackReveal = useCallStore((s) => s.playbackReveal);
   // Session lifecycle lives in the store so it survives navigation away & back.
   const inSession = useCallStore((s) => s.inSession);
+  const sessionMode = useCallStore((s) => s.sessionMode);
+  const runId = useCallStore((s) => s.runId);
   const liveInfo = useCallStore((s) => s.liveInfo);
   const replay = useCallStore((s) => s.replay);
   const setLiveInfo = useCallStore((s) => s.setLiveInfo);
   const applyEvent = useCallStore((s) => s._apply);
   const openSession = useCallStore((s) => s.openSession);
+  const attachLiveStream = useCallStore((s) => s.attachLiveStream);
   const endSession = useCallStore((s) => s.endSession);
 
   const playgroundDefaults = useSettings((s) => s.playgroundDefaults);
@@ -136,11 +184,32 @@ export function StudioView() {
   const VOICE_RATES = [1, 1.25, 1.5, 2];
   const cycleVoiceRate = () => setVoiceRate((r) => VOICE_RATES[(VOICE_RATES.indexOf(r) + 1) % VOICE_RATES.length] ?? 1);
 
+  // Live participation: text role-play (agent leads, you type as the rep) or a
+  // real voice call. Text is the default — no LiveKit/keys needed.
+  const [liveTransport, setLiveTransport] = useState<LiveTransport>("text");
+
+  // This page's mode (the route owns it) and whether the ACTIVE session belongs to
+  // this page. A simulate run started on /simulate must not show through on /live.
+  const pageMode: StudioMode = initialMode ?? mode;
+  const routePath = pageMode === "live" ? "/live" : "/simulate";
+  const ownSession = inSession && sessionMode === pageMode;
+
+  // Keep the pre-config selector on this page's mode whenever we're NOT showing
+  // this page's own running session (so /live shows the live setup even if a
+  // simulate run is still alive in the store, and vice versa).
+  useEffect(() => {
+    if (initialMode && !ownSession && mode !== initialMode) setMode(initialMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMode, ownSession]);
+
   // Live-only config (kept local; the live token + session flags use the store).
   const [voiceId, setVoiceId] = useState("");
   const [temperature, setTemperature] = useState(0.4);
   const [instructions, setInstructions] = useState("");
   const [promptDirty, setPromptDirty] = useState(false);
+  // Has the user manually picked a model? Until they do, the model follows the
+  // mode-appropriate default (fast for live, reasoning for simulate).
+  const [modelDirty, setModelDirty] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
 
@@ -155,20 +224,29 @@ export function StudioView() {
 
   const scenario = options?.scenarios.find((s) => s.id === scenarioId);
 
-  // Deep link / "Open" from Call History: replay a stored run, then drop the param.
+  // URL ⇄ session sync. The runId lives in the URL so a session is shareable,
+  // bookmarkable, and survives refresh — and so each page only adopts its own run.
   const openedRef = useRef<string | null>(null);
+  // (a) URL → session: a runId in the URL that isn't the active run = open it
+  //     (deep link from Call History, a refresh, or a shared link). Replay.
   useEffect(() => {
     const rid = search?.runId;
-    if (rid && openedRef.current !== rid) {
+    if (rid && rid !== runId && openedRef.current !== rid) {
       openedRef.current = rid;
-      openSession(rid);
-      navigate({ to: "/studio", search: { runId: undefined }, replace: true });
+      openSession(rid, pageMode);
     }
-  }, [search?.runId, openSession, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search?.runId, runId]);
+  // (b) session → URL: reflect this page's own running session's id in the URL.
+  useEffect(() => {
+    if (ownSession && runId && search?.runId !== runId) {
+      navigate({ to: routePath, search: { runId }, replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownSession, runId, search?.runId]);
 
   useEffect(() => {
     if (!options) return;
-    if (!model) selectModel(playgroundDefaults.model || options.defaults.model);
     setVoiceId((v) => v || playgroundDefaults.voiceId || options.defaults.voiceId || options.voices[0]?.id || "");
     setTemperature((t) => t || playgroundDefaults.temperature || options.defaults.temperature);
     // Don't reseed the scenario while a session is active/restored — that would
@@ -182,9 +260,30 @@ export function StudioView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options]);
 
+  // Mode-aware model default: follows the mode (fast for live, reasoning for
+  // simulate) until the user manually picks one. Never reseeds mid-session.
+  useEffect(() => {
+    if (!options || modelDirty || inSession) return;
+    selectModel(defaultModelFor(mode, liveTransport, options, playgroundDefaults.model));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options, mode, liveTransport, modelDirty, inSession]);
+
   useEffect(() => {
     if (scenario && !promptDirty) setInstructions(promptFor(scenario));
   }, [scenario, promptDirty]);
+
+  // LIVE mode: once a voice session is up, subscribe to the backend bridge's SSE
+  // (parity with simulate) so the graph / prediction / reasoning / tool panels
+  // track the call. Attach once per runId; the audio itself rides on LiveKit.
+  const liveStreamRef = useRef<string | null>(null);
+  useEffect(() => {
+    const rid = sessionMode === "live" && inSession && !replay ? liveInfo?.runId : undefined;
+    if (rid && liveStreamRef.current !== rid) {
+      liveStreamRef.current = rid;
+      attachLiveStream(rid);
+    }
+    if (!inSession) liveStreamRef.current = null;
+  }, [sessionMode, inSession, replay, liveInfo?.runId, attachLiveStream]);
 
   const startLive = async (): Promise<boolean> => {
     setLiveError(null);
@@ -208,7 +307,8 @@ export function StudioView() {
     setLaunching(true);
     try {
       if (mode === "simulate") await start();
-      else await startLive();
+      else if (liveTransport === "text") await start({ humanPayer: true }); // agent leads, you type as the rep
+      else await startLive(); // real voice call over LiveKit
     } finally {
       setLaunching(false);
     }
@@ -217,18 +317,26 @@ export function StudioView() {
   const newSession = () => {
     endSession();
     setLiveError(null);
+    openedRef.current = null;
+    navigate({ to: routePath, search: { runId: undefined }, replace: true });
   };
 
-  if (!inSession) {
+  // Show this page's pre-config unless ITS OWN session is running (a session from
+  // the other surface stays in the store but never renders through here).
+  if (!ownSession) {
     return (
       <PreConfigView
         options={options}
         mode={mode}
+        lockMode
+        pageTitle={mode === "live" ? "Live" : "Simulation"}
+        transport={liveTransport}
+        onTransport={setLiveTransport}
         onMode={setMode}
         scenarioId={scenarioId}
         onScenario={(id) => { selectScenario(id); setPromptDirty(false); }}
         model={model}
-        onModel={selectModel}
+        onModel={(id) => { selectModel(id); setModelDirty(true); }}
         voiceId={voiceId}
         onVoice={setVoiceId}
         temperature={temperature}
@@ -242,20 +350,24 @@ export function StudioView() {
     );
   }
 
+  // Render by what the SESSION is (sessionMode), not the pre-config selector.
+  // Text role-play streams over the same SSE loop as simulate (no LiveKit room);
+  // a live VOICE session is the one that holds `liveInfo`.
+  const textRoleplay = sessionMode === "live" && !liveInfo;
   const payerVoiceId = options?.voices?.find((v) => v.id !== voiceId)?.id ?? voiceId;
-  const voiceActive = voiceOn && !replay; // never auto-speak a replayed call
-  const thinking = mode === "simulate" && !replay && (status === "active" || status === "dialing");
+  const voiceActive = sessionMode === "simulate" && voiceOn && !replay; // never auto-speak a replay or role-play
+  const thinking = (sessionMode === "simulate" || textRoleplay) && !replay && !awaitingPayer && (status === "active" || status === "dialing");
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] min-h-[560px] flex-col gap-3">
+    <div className="flex h-[calc(100vh-7rem)] min-h-[560px] flex-col gap-6">
       <SessionHeader
         scenario={scenario}
-        mode={mode}
+        mode={sessionMode ?? pageMode}
         status={status}
         model={model}
         replay={replay}
         voiceOn={voiceOn}
-        onToggleVoice={() => setVoiceOn((v) => !v)}
+        onSetVoice={setVoiceOn}
         voiceRate={voiceRate}
         onCycleVoiceRate={cycleVoiceRate}
         onNewSession={newSession}
@@ -265,7 +377,7 @@ export function StudioView() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12">
         {/* ---- Conversation hero (Claude/ChatGPT/Perplexity style) ---- */}
         <div className="flex min-h-0 flex-col lg:col-span-8">
-          {mode === "simulate" ? (
+          {sessionMode === "simulate" ? (
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
                 <StudioTranscript
@@ -274,6 +386,35 @@ export function StudioView() {
                   emptyTitle={replay ? "Loading session…" : "Starting the simulation…"}
                   emptyDescription="The agent and payer converse end-to-end on real local models. The agent's reasoning — graph traversal, thinking, and predictions — streams above each turn."
                 />
+                <InlineMetrics />
+              </div>
+            </div>
+          ) : textRoleplay ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-3">
+                {!replay && <RoleCard scenarioId={scenarioId} />}
+                <StudioTranscript
+                  thinking={thinking}
+                  emptyTitle={replay ? "Loading session…" : "The agent is placing the call…"}
+                  emptyDescription="You're the payer rep. The agent leads — authenticating, asking for what it needs — and you respond. Its reasoning, graph walk, and predictions stream above each turn."
+                />
+                {!replay && (
+                  <div className="flex shrink-0 flex-col gap-2">
+                    {awaitingPayer && (predictionSet?.predictions?.length ?? 0) > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <span className="px-1 text-[11px] font-medium text-muted-foreground">Suggested replies — what the rep might say</span>
+                        <Suggestions
+                          items={predictionSet!.predictions.slice(0, 3).map((p) => ({
+                            label: p.utterance,
+                            hint: `${p.intent} · ${Math.round(p.confidence * 100)}%`,
+                          }))}
+                          onPick={(t) => say(t)}
+                        />
+                      </div>
+                    )}
+                    <PayerReplyBar awaiting={awaitingPayer} onSend={say} />
+                  </div>
+                )}
                 <InlineMetrics />
               </div>
             </div>
@@ -311,7 +452,7 @@ export function StudioView() {
         </aside>
       </div>
 
-      {mode === "simulate" && <SimVoicePlayer enabled={voiceActive} rate={voiceRate} agentVoiceId={voiceId} payerVoiceId={payerVoiceId} />}
+      {sessionMode === "simulate" && <SimVoicePlayer enabled={voiceActive} rate={voiceRate} agentVoiceId={voiceId} payerVoiceId={payerVoiceId} />}
 
       {/* ---- Full inspect drawer ---- */}
       <Sheet open={drawer} onOpenChange={setDrawer}>
@@ -326,6 +467,23 @@ export function StudioView() {
   );
 }
 
+function PlaybackBtn({ active, onClick, icon, label, title }: { active: boolean; onClick: () => void; icon?: React.ReactNode; label: string; title: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+        active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 function SessionHeader({
   scenario,
   mode,
@@ -333,7 +491,7 @@ function SessionHeader({
   model,
   replay,
   voiceOn,
-  onToggleVoice,
+  onSetVoice,
   voiceRate,
   onCycleVoiceRate,
   onNewSession,
@@ -345,12 +503,15 @@ function SessionHeader({
   model: string;
   replay: boolean;
   voiceOn: boolean;
-  onToggleVoice: () => void;
+  onSetVoice: (on: boolean) => void;
   voiceRate: number;
   onCycleVoiceRate: () => void;
   onNewSession: () => void;
   onInspect: () => void;
 }) {
+  // TTS is the only credit-spender; default OFF. "Voiced" = paced + ElevenLabs.
+  const ttsEnabled = useSettings((s) => s.ttsEnabled);
+  const setTtsEnabled = useSettings((s) => s.setTtsEnabled);
   const phase = useCallStore((s) => s.phase);
   const startedWallMs = useCallStore((s) => s.startedWallMs);
   const runId = useCallStore((s) => s.runId);
@@ -364,104 +525,121 @@ function SessionHeader({
   const running = status === "active" || status === "dialing";
 
   return (
-    <Card className="flex flex-col gap-3 p-3 sm:p-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
-            {mode === "live" ? <Radio className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-          </span>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">
-              {scenario ? `${scenario.payer} — ${scenario.title}` : "Session"}
-            </div>
-            <div className="truncate text-xs text-muted-foreground">{(scenario?.category ?? "").replace("-", " ")}</div>
+    <div className="flex flex-col gap-3">
+      <PageHeader
+        title={scenario ? `${scenario.payer} — ${scenario.title}` : "Session"}
+        actions={
+          <>
+            <StatusChip tone={mode === "live" ? "blue" : "violet"}>
+              {mode === "live" ? <Radio className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+              {mode === "live" ? "Live" : "Simulate"}
+            </StatusChip>
+            <StatusChip tone={meta.tone} dot pulse={meta.pulse}>{meta.label}</StatusChip>
+            {replay && <StatusChip tone="blue"><History className="h-3 w-3" /> Replay</StatusChip>}
+
+            {!replay && <span className="tabular text-lg font-semibold text-foreground">{formatClock(elapsedMs)}</span>}
+            <StatusChip tone="violet"><Brain className="h-3 w-3" /> {model.split("/").pop()}</StatusChip>
+
+            {mode === "simulate" && !replay && (
+              <div className="flex items-center gap-1.5">
+                {/* Read = instant text. Listen = paced but silent (no credits).
+                    Voiced = paced + ElevenLabs read-aloud (uses credits). */}
+                <div className="inline-flex rounded-lg border border-border p-0.5">
+                  <PlaybackBtn
+                    active={!voiceOn}
+                    onClick={() => onSetVoice(false)}
+                    label="Read"
+                    title="Read — instant, full speed, no audio"
+                  />
+                  <PlaybackBtn
+                    active={voiceOn && !ttsEnabled}
+                    onClick={() => { onSetVoice(true); setTtsEnabled(false); }}
+                    label="Listen"
+                    title="Listen — paced back-and-forth, silent (no ElevenLabs credits)"
+                  />
+                  <PlaybackBtn
+                    active={voiceOn && ttsEnabled}
+                    onClick={() => { onSetVoice(true); setTtsEnabled(true); }}
+                    icon={<Volume2 className="h-3.5 w-3.5" />}
+                    label="Voiced"
+                    title="Voiced — paced + ElevenLabs read-aloud (uses credits)"
+                  />
+                </div>
+                {voiceOn && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="tabular font-medium"
+                    onClick={onCycleVoiceRate}
+                    title="Playback speed"
+                  >
+                    {voiceRate}×
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {mode === "simulate" && !replay && (status === "active" || status === "paused") && (
+              <Button variant="outline" size="sm" onClick={status === "paused" ? resume : pause}>
+                {status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+              </Button>
+            )}
+            {mode === "simulate" && !replay && running && (
+              <Button variant="outline" size="sm" onClick={stop} disabled={!runId}>
+                <Square className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={onInspect}>
+              <PanelRightOpen className="h-3.5 w-3.5" /> Inspect
+            </Button>
+            <Button size="sm" onClick={onNewSession}>
+              <Plus className="h-3.5 w-3.5" /> New session
+            </Button>
+          </>
+        }
+      />
+
+      {/* meta strip: scenario phases + member context PHI */}
+      <Card className="flex flex-col gap-2.5 p-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {scenario?.category && (
+            <span className="text-xs capitalize text-muted-foreground">{scenario.category.replace("-", " ")}</span>
+          )}
+          {/* phase pills */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PHASES.map((label, i) => {
+              const done = i < phase || status === "completed" || status === "escalated";
+              const current = i === phase && running;
+              return (
+                <span
+                  key={label}
+                  className={cn(
+                    "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    done ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                      : current ? "bg-primary text-primary-foreground"
+                        : "bg-secondary/60 text-muted-foreground",
+                  )}
+                >
+                  {done && <Check className="h-2.5 w-2.5" />} {label}
+                </span>
+              );
+            })}
           </div>
         </div>
 
-        <StatusChip tone={meta.tone} dot pulse={meta.pulse}>{meta.label}</StatusChip>
-        {replay && <StatusChip tone="blue"><History className="h-3 w-3" /> Replay</StatusChip>}
-
-        {/* phase pills */}
-        <div className="hidden items-center gap-1.5 md:flex">
-          {PHASES.map((label, i) => {
-            const done = i < phase || status === "completed" || status === "escalated";
-            const current = i === phase && running;
-            return (
-              <span
-                key={label}
-                className={cn(
-                  "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                  done ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : current ? "bg-primary text-primary-foreground"
-                      : "bg-secondary/60 text-muted-foreground",
-                )}
-              >
-                {done && <Check className="h-2.5 w-2.5" />} {label}
-              </span>
-            );
-          })}
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          {!replay && <span className="tabular text-lg font-semibold text-foreground">{formatClock(elapsedMs)}</span>}
-          <StatusChip tone="violet"><Brain className="h-3 w-3" /> {model.split("/").pop()}</StatusChip>
-
-          {mode === "simulate" && !replay && (
-            <div className="flex items-center">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-r-none"
-                onClick={onToggleVoice}
-                title={voiceOn ? "Mute agent voices" : "Unmute agent voices"}
-              >
-                {voiceOn ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="-ml-px rounded-l-none tabular font-medium"
-                onClick={onCycleVoiceRate}
-                disabled={!voiceOn}
-                title="Read-aloud speed"
-              >
-                {voiceRate}×
-              </Button>
-            </div>
-          )}
-
-          {mode === "simulate" && !replay && (status === "active" || status === "paused") && (
-            <Button variant="outline" size="sm" onClick={status === "paused" ? resume : pause}>
-              {status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-            </Button>
-          )}
-          {mode === "simulate" && !replay && running && (
-            <Button variant="outline" size="sm" onClick={stop} disabled={!runId}>
-              <Square className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={onInspect}>
-            <PanelRightOpen className="h-3.5 w-3.5" /> Inspect
-          </Button>
-          <Button size="sm" onClick={onNewSession}>
-            <Plus className="h-3.5 w-3.5" /> New session
-          </Button>
-        </div>
-      </div>
-
-      {/* member context PHI strip */}
-      {full?.patient && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2.5 text-xs">
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <User className="h-3.5 w-3.5" /> {full.patient.name}
-          </span>
-          <span className="font-mono text-muted-foreground">{full.patient.memberId}</span>
-          <span className="font-mono text-muted-foreground">DOB {full.patient.dob}</span>
-          {full.provider && <span className="font-mono text-muted-foreground">NPI {full.provider.npi}</span>}
-          <StatusChip tone="violet" className="ml-auto"><Lock className="h-3 w-3" /> PHI</StatusChip>
-        </div>
-      )}
-    </Card>
+        {full?.patient && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2.5 text-xs">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <User className="h-3.5 w-3.5" /> {full.patient.name}
+            </span>
+            <span className="font-mono text-muted-foreground">{full.patient.memberId}</span>
+            <span className="font-mono text-muted-foreground">DOB {full.patient.dob}</span>
+            {full.provider && <span className="font-mono text-muted-foreground">NPI {full.provider.npi}</span>}
+            <StatusChip tone="violet" className="ml-auto"><Lock className="h-3 w-3" /> PHI</StatusChip>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
@@ -497,14 +675,11 @@ function InspectTabs() {
 function LiveStage({ onEnd }: { onEnd: () => void }) {
   const conn = useConnectionState();
   const { state, audioTrack } = useVoiceAssistant();
-  const transcriptions = useTranscriptions();
   const connected = conn === ConnectionState.Connected;
-
-  const messages: LiveMessage[] = transcriptions.map((t, i) => ({
-    id: t.streamInfo?.id ?? `${i}`,
-    role: (t.participantInfo?.identity ?? "").includes("agent") ? "agent" : "user",
-    text: t.text,
-  }));
+  // The transcript is fed by the backend bridge over SSE (turns + tool cards +
+  // reasoning, interleaved) — the same store the sidecar reads — rather than raw
+  // LiveKit captions, so the live call shows the agent's full activity.
+  const thinking = state === "thinking";
 
   return (
     <>
@@ -521,12 +696,64 @@ function LiveStage({ onEnd }: { onEnd: () => void }) {
       <div className="flex h-28 items-center justify-center border-b border-border bg-secondary/30">
         <BarVisualizer state={state} barCount={9} trackRef={audioTrack} className="h-16 w-56" options={{ minHeight: 8 }} />
       </div>
-      <StudioTranscript messages={messages} emptyTitle="Connected" emptyDescription="The agent will greet you — start speaking when ready." />
+      <div className="min-h-0 flex-1">
+        <StudioTranscript
+          thinking={thinking}
+          emptyTitle={connected ? "Connected" : "Connecting…"}
+          emptyDescription="The agent will greet you — start speaking when ready. Its reasoning, tool calls, graph, and predictions stream live as you talk."
+        />
+      </div>
       <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
         <VoiceAssistantControlBar controls={{ leave: false }} />
         <Button variant="outline" onClick={onEnd}><PhoneOff className="h-4 w-4" /> End session</Button>
       </div>
     </>
+  );
+}
+
+/**
+ * Reply bar for text role-play: the human plays the payer rep. Enabled only when
+ * the agent has paused for their turn (`awaiting`); otherwise it shows the agent
+ * is still working so the human isn't tempted to talk over it.
+ */
+function PayerReplyBar({ awaiting, onSend }: { awaiting: boolean; onSend: (t: string) => void }) {
+  const [text, setText] = useState("");
+  const submit = () => {
+    const body = text.trim();
+    if (!body || !awaiting) return;
+    onSend(body);
+    setText("");
+  };
+  return (
+    <div className="shrink-0">
+      <div
+        className={cn(
+          "flex items-end gap-2 rounded-2xl border bg-card/60 p-2 transition-colors",
+          awaiting ? "border-brand-500/40" : "border-border opacity-70",
+        )}
+      >
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={1}
+          disabled={!awaiting}
+          placeholder={awaiting ? "Reply as the payer rep…  (Enter to send, Shift+Enter for a new line)" : "The agent is working…"}
+          className="scroll-thin max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
+        />
+        <Button size="sm" onClick={submit} disabled={!awaiting || !text.trim()}>
+          <Send className="h-3.5 w-3.5" /> Send
+        </Button>
+      </div>
+      <p className="mt-1 px-1 text-[11px] text-muted-foreground">
+        {awaiting ? "Your turn — answer as the rep would (the role card shows what's on file)." : "Listening to the agent…"}
+      </p>
+    </div>
   );
 }
 

@@ -40,6 +40,7 @@ EDGE_WEIGHTS: dict[str, float] = {
     "SUBMITTED": 0.6,    # provider -> claim
     "SEEN_BY": 0.5,      # member -> provider (hub)
     "FOR_PROCEDURE": 0.7,
+    "NOTED": 1.0,        # member -> a fact the agent recorded on the call
 }
 
 # Per-intent multiplier so retrieval chases the node types that matter for the
@@ -109,6 +110,7 @@ class ContextGraph:
         self._nodes: dict[str, _Node] = {}
         self._edges: list[_Edge] = []
         self._adj: dict[str, list[tuple[str, str]]] = {}  # node -> [(neighbor, edge_label)]
+        self._note_seq = 0  # counter for conversational `note:` nodes
 
     # -- construction --------------------------------------------------------
 
@@ -234,6 +236,28 @@ class ContextGraph:
                 member_node = f"member:{self.focus.get('member')}"
                 self._add_edge(member_node, node, "HAS_CLAIM")
 
+    def note(self, label: str, value: str = "", *, kind: str = "note", relates_to: str | None = None) -> str | None:
+        """Record a fact the agent learned ON THE CALL as a conversational node —
+        the rep's name, a reference/confirmation number, a verbal determination, a
+        callback. Unlike the FK-derived record nodes, these are written live by the
+        agent (via the `note_fact` tool); they're anchored to the member (or an
+        explicit node), surfaced back in later grounding so the agent can refer to
+        them, and rendered distinctly in the viz. Returns the new node id."""
+        label = (label or "").strip()
+        value = (value or "").strip()
+        if not label and not value:
+            return None
+        self._note_seq += 1
+        nid = f"note:{self._note_seq}"
+        disp = f"{label}: {value}" if (label and value) else (value or label)
+        self._add_node(
+            nid, "note", disp[:60], {"label": label, "value": value, "kind": kind}, [value, label]
+        )
+        anchor = relates_to if (relates_to and relates_to in self._nodes) else f"member:{self.focus.get('member')}"
+        if anchor in self._nodes:
+            self._add_edge(anchor, nid, "NOTED")
+        return nid
+
     # -- retrieval -----------------------------------------------------------
 
     def _seed(self, transcript: str) -> dict[str, float]:
@@ -323,6 +347,13 @@ class ContextGraph:
                     scored.setdefault(nid, 0.2)
                     scored[nid] = max(scored[nid], 0.2)
 
+        # ALWAYS surface what the agent recorded on the call — these conversational
+        # notes are the agent's working memory, ranked above ordinary records so the
+        # budget never drops them ("record + look back").
+        for node_id, node in self._nodes.items():
+            if node.type == "note":
+                scored[node_id] = max(scored.get(node_id, 0.0), 0.85)
+
         lit = {nid for nid, s in scored.items() if s >= MIN_SCORE}
 
         # budget the serialized context by score (force focus first)
@@ -373,6 +404,10 @@ class ContextGraph:
             return f"PROVIDER {a.get('npi')} — {node.label} (tax id {a.get('tax_id')})."
         if node.type == "payer":
             return f"PAYER {a.get('payer_id')} — {node.label}."
+        if node.type == "note":
+            lbl = a.get("label") or "note"
+            val = a.get("value")
+            return f"NOTED ON CALL — {lbl}: {val}." if val else f"NOTED ON CALL — {lbl}."
         return ""
 
     def _to_subgraph(
@@ -408,6 +443,18 @@ class ContextGraph:
             for e in self._edges
         ]
         return Subgraph(nodes=nodes, edges=edges, seeds=list(seeds.keys()), context=context, hops=max_hops)
+
+    def all_facts(self) -> list[str]:
+        """Every node's fact line — a human-readable cheat sheet of what's on file.
+        Used to build the payer rep's role card in text role-play."""
+        return [line for n in self._nodes.values() if (line := self._fact_line(n))]
+
+    def fact_for(self, node_id: str) -> str:
+        """Serialized fact line for a single node id ("" if unknown). Lets the
+        live bridge fold an *anticipated* record into the agent's grounding even
+        when ordinary retrieval hasn't lit it yet."""
+        node = self._nodes.get(node_id)
+        return self._fact_line(node) if node else ""
 
     def signature(self) -> str:
         """Stable id list for delta-detection of the lit subgraph."""

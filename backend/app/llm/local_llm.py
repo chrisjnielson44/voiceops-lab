@@ -21,6 +21,7 @@ from typing import Any, TypedDict
 import httpx
 
 from app.config import settings
+from app.providers.registry import get_model
 
 
 class LLMMessage(TypedDict):
@@ -81,6 +82,38 @@ def _api_key() -> str:
     return settings.local_llm_api_key
 
 
+@dataclass
+class _Endpoint:
+    base_url: str
+    api_key: str
+    headers: dict[str, str]
+
+
+def _resolve_endpoint(model_id: str | None) -> _Endpoint:
+    """Pick which OpenAI-compatible server serves `model_id`.
+
+    Hosted models (provider_id == "openrouter" in the registry) route to
+    OpenRouter when OPENROUTER_API_KEY is set; everything else — the local MLX /
+    Ollama models, and any unknown id — uses the local model server. This is what
+    makes a hosted model selected in the cockpit actually run against OpenRouter
+    instead of being sent to localhost with the wrong model name.
+    """
+    info = get_model(model_id) if model_id else None
+    if info and info.provider_id == "openrouter":
+        key = (settings.openrouter_api_key or "").strip()
+        if key:
+            base = (settings.openrouter_base_url or "").strip().rstrip("/") or "https://openrouter.ai/api/v1"
+            return _Endpoint(
+                base_url=base,
+                api_key=key,
+                headers={
+                    "HTTP-Referer": settings.openrouter_site_url,
+                    "X-Title": settings.openrouter_app_name,
+                },
+            )
+    return _Endpoint(base_url=_base_url(), api_key=_api_key(), headers={})
+
+
 async def chat(
     messages: list[LLMMessage],
     *,
@@ -90,8 +123,10 @@ async def chat(
     abort: asyncio.Event | None = None,
 ) -> LLMResult:
     start = time.time()
+    resolved_model = model or local_model_id()
+    endpoint = _resolve_endpoint(resolved_model)
     payload = {
-        "model": model or local_model_id(),
+        "model": resolved_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -99,12 +134,13 @@ async def chat(
     }
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {_api_key()}",
+        "Authorization": f"Bearer {endpoint.api_key}",
+        **endpoint.headers,
     }
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
         request = asyncio.create_task(
-            client.post(f"{_base_url()}/chat/completions", json=payload, headers=headers)
+            client.post(f"{endpoint.base_url}/chat/completions", json=payload, headers=headers)
         )
         if abort is not None:
             abort_wait = asyncio.create_task(abort.wait())
@@ -225,18 +261,20 @@ async def chat_stream(
     is awaited as tokens arrive (the caller throttles SSE emits). Returns the
     parsed JSON action once the stream completes."""
     start = time.time()
+    resolved_model = model or local_model_id()
+    endpoint = _resolve_endpoint(resolved_model)
     payload = {
-        "model": model or local_model_id(),
+        "model": resolved_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": True,
     }
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {_api_key()}"}
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {endpoint.api_key}", **endpoint.headers}
     reasoning = ""
     content = ""
     async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
-        async with client.stream("POST", f"{_base_url()}/chat/completions", json=payload, headers=headers) as res:
+        async with client.stream("POST", f"{endpoint.base_url}/chat/completions", json=payload, headers=headers) as res:
             if res.status_code >= 400:
                 body = await res.aread()
                 raise RuntimeError(f"Local LLM {res.status_code}: {body[:200]!r}")

@@ -20,7 +20,7 @@ function isTypingTarget(el: EventTarget | null): boolean {
  *  - g then p/s/a/c/i  navigate (vim-style leader)
  */
 export function useKeyboardShortcuts(navigate: (path: string) => void) {
-  const { toggleCommand, openSettings } = useSettings();
+  const toggleCommand = useSettings((s) => s.toggleCommand);
   const { resolvedTheme, setTheme } = useTheme();
   // Refs so the listener stays stable while reading fresh values.
   const themeRef = useRef({ resolvedTheme, setTheme });
@@ -39,7 +39,7 @@ export function useKeyboardShortcuts(navigate: (path: string) => void) {
       }
       if (mod && e.key === ",") {
         e.preventDefault();
-        openSettings();
+        navigate("/settings");
         return;
       }
 
@@ -69,5 +69,5 @@ export function useKeyboardShortcuts(navigate: (path: string) => void) {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate, toggleCommand, openSettings]);
+  }, [navigate, toggleCommand]);
 }

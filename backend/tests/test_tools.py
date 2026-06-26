@@ -37,6 +37,16 @@ async def test_verify_claim_denied_includes_detail(fake_pool):
     assert "2026-04-18" in res.result
 
 
+async def test_note_fact_records_a_conversational_note(fake_pool):
+    res = await execute_tool(
+        "note_fact", {"label": "Rep name", "value": "Christopher Nielson"}, ToolContext(run_id="r", scenario_id="elig-aetna")
+    )
+    assert res.status == "ok"
+    assert res.phi is False  # an operational note, not patient PHI
+    assert res.data == {"label": "Rep name", "value": "Christopher Nielson", "kind": "note", "note": True}
+    assert "Christopher Nielson" in res.result
+
+
 async def test_unknown_tool(fake_pool):
     res = await execute_tool("frobnicate", {}, ToolContext(run_id="r", scenario_id="x"))
     assert res.status == "error"

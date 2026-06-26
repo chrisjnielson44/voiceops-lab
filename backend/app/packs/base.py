@@ -43,7 +43,7 @@ class Pack:
     async def execute_tool(self, tool: str, args: dict, ctx: ToolContext) -> ToolResult:
         raise NotImplementedError
 
-    def tool_context(self, *, run_id: str, scenario: Scenario, transcript: str) -> ToolContext:
+    def tool_context(self, *, run_id: str, scenario: Scenario, transcript: str, model: str | None = None) -> ToolContext:
         """Build the per-call tool context (entity ids the tools resolve)."""
         raise NotImplementedError
 
@@ -64,6 +64,15 @@ class Pack:
         """Map a predicted next intent to the (tool, args) the agent will likely
         need, so the result can be prefetched. None = nothing to prefetch."""
         return None
+
+    def anticipated_records(self, predictions: list, scenario: Scenario) -> list[tuple[str, str, str]]:
+        """For each anticipated next intent, the `(intent, tool, graph-node-id)`
+        whose record the agent is about to need, in confidence order (deduped by
+        node). The live bridge folds these node records into the agent's grounding
+        so it already holds the facts the counterparty is most likely to ask for
+        next — there is no out-of-process cache to serve (see
+        `LiveBridge.grounding`). Default: nothing anticipated."""
+        return []
 
     # --- audit -------------------------------------------------------------
     def sensitive_scope(self, scenario: Scenario) -> str | None:

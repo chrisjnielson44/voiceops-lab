@@ -6,9 +6,81 @@
 import { createServer } from "node:http";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.mjs";
+import { provisionUser } from "./provision.mjs";
 
 const PORT = Number(process.env.AUTH_PORT || 3000);
 const handler = toNodeHandler(auth);
+
+function nodeHeaders(req) {
+  const h = new Headers();
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (typeof v === "string") h.set(k, v);
+    else if (Array.isArray(v)) h.set(k, v.join(", "));
+  }
+  return h;
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (c) => {
+      body += c;
+      if (body.length > 1_000_000) reject(new Error("payload too large"));
+    });
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        reject(new Error("invalid JSON"));
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res, status, obj) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(obj));
+}
+
+/**
+ * Admin-only user provisioning. Public sign-up is disabled and org `addMember`
+ * is a server-only Better Auth endpoint, so the cockpit's "create user" flow
+ * posts here. We verify the caller is an admin (via their session cookie), then
+ * create the account + workspace/team membership server-side.
+ */
+async function handleProvisionUser(req, res) {
+  if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
+  let session;
+  try {
+    session = await auth.api.getSession({ headers: nodeHeaders(req) });
+  } catch {
+    session = null;
+  }
+  if (!session?.user || session.user.role !== "admin") {
+    return sendJson(res, 403, { error: "admin access required" });
+  }
+  let payload;
+  try {
+    payload = await readJson(req);
+  } catch (e) {
+    return sendJson(res, 400, { error: e.message });
+  }
+  try {
+    const ctx = await auth.$context;
+    const user = await provisionUser(ctx, {
+      email: String(payload.email || "").trim(),
+      name: typeof payload.name === "string" ? payload.name.trim() : undefined,
+      password: String(payload.password || ""),
+      role: payload.role === "admin" ? "admin" : "user",
+      teamId: payload.teamId || undefined,
+    });
+    return sendJson(res, 200, { user: { id: user.id, email: user.email } });
+  } catch (e) {
+    return sendJson(res, 400, { error: e.message || "provisioning failed" });
+  }
+}
 
 const ALLOW = (
   process.env.AUTH_CORS_ORIGINS ||
@@ -30,6 +102,13 @@ const server = createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.statusCode = 204;
     res.end();
+    return;
+  }
+  // Custom admin route (must be checked before the catch-all Better Auth handler).
+  if (req.url && req.url.split("?")[0] === "/api/auth/provision-user") {
+    handleProvisionUser(req, res).catch(() => {
+      if (!res.writableEnded) sendJson(res, 500, { error: "internal error" });
+    });
     return;
   }
   if (req.url && req.url.startsWith("/api/auth")) {

@@ -49,7 +49,7 @@ def test_narrate_predictions_ranks_and_flags_warmed():
     assert seg is not None
     assert seg.phase == "anticipate"
     assert "request_authentication 85%" in seg.text
-    assert "Warmed the cache" in seg.text
+    assert "Pre-loaded the most likely record" in seg.text
     assert seg.predictions[0]["warmed"] is True
     assert seg.predictions[1]["warmed"] is False
 

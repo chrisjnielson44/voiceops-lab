@@ -18,7 +18,9 @@ ToolName = Literal[
     "summarize",
 ]
 ToolStatus = Literal["ok", "warn", "error"]
-ScenarioCategory = Literal["eligibility", "claim-status", "prior-auth"]
+# Healthcare uses these three; generic/custom domain packs may use any
+# kebab-case label (e.g. "card-dispute", "billing"), so this is a free string.
+ScenarioCategory = str
 ScenarioDifficulty = Literal["routine", "moderate", "complex"]
 ScenarioOutcome = Literal["completed", "escalated"]
 
@@ -92,6 +94,11 @@ class Scenario(CamelModel):
     baseline_escalation_risk: float
     required_fields: list[str]
     connect_ms: int
+    # Self-contained ground truth for non-DB-backed scenarios (generic domain
+    # packs + user-created custom scenarios). The counterparty model answers
+    # ONLY from this text when there are no authoritative DB rows. Healthcare's
+    # seeded scenarios leave this null and load ground truth from Neon instead.
+    facts: str | None = None
     turns: list[TranscriptTurn] = Field(default_factory=list)
     total_duration_ms: int = 0
 

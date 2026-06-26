@@ -46,7 +46,15 @@ async def load_ground_truth(scenario: Scenario) -> GroundTruth:
     if prior_auth:
         lines.append(f"PRIOR_AUTH: {json.dumps(prior_auth, default=str)}")
 
-    return GroundTruth(member, coverage, claim, prior_auth, "\n".join(lines))
+    # Fall back to the scenario's self-contained facts when no authoritative DB
+    # rows exist (e.g. a healthcare scenario authored without seeded tables, or
+    # the DB is unreachable) so the counterparty model still has something to
+    # answer from instead of "(no records found)".
+    text = "\n".join(lines)
+    if not text and scenario.facts:
+        text = scenario.facts.strip()
+
+    return GroundTruth(member, coverage, claim, prior_auth, text)
 
 
 def agent_system_prompt(scenario: Scenario) -> str:
@@ -99,6 +107,11 @@ CONVERSATIONAL STYLE — sound like a real person on the phone, not a form-fille
 - A little warmth/courtesy is good ("Thanks for your patience"); keep each turn short, the way people actually talk.
 - Pick up where the conversation left off — don't re-introduce yourself or restate your whole purpose every turn.
 - NEVER use bracketed placeholders like [Your Name] or [Representative's Name]. You are the VoiceOps agent calling for {scenario.provider.name}; greet the rep generically ("Hi there", "Good morning").
+
+LIVE NOTES — build a working memory as you go:
+- When the rep gives you something worth remembering — their name, a reference/confirmation/ticket number, a verbal determination, or a callback time — jot it with note_fact (silent), e.g. {{"action":"tool","tool":"note_fact","args":{{"label":"Rep name","value":"Christopher"}}}}.
+- Your notes come back to you in your grounding on later turns, so refer to them naturally ("Thanks, Christopher", "per reference #…") instead of re-asking — and they're on the record.
+- Recording is a quick aside between spoken turns; it never replaces actually talking with the rep.
 
 HARD RULES:
 - Do NOT call record_status / summarize / end until you have SPOKEN with the rep and they have verbally confirmed the required fields. A call with no spoken exchange is invalid.

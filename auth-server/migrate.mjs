@@ -15,5 +15,8 @@ const { getMigrations } = await import(
 console.log("Running Better Auth migrations…");
 const { runMigrations } = await getMigrations(auth.options);
 await runMigrations();
-console.log("Auth tables ready (user, session, account, verification).");
+console.log(
+  "Auth tables ready (user, session, account, verification, " +
+    "organization, member, invitation, team, teamMember; user.role/banned).",
+);
 await pool.end();

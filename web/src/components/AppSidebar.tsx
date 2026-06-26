@@ -9,16 +9,23 @@ import {
   Home,
   Layers,
   LogOut,
+  Monitor,
+  Moon,
   Plug,
+  Radio,
   ScrollText,
   Search,
   Settings,
   Sparkles,
+  Sun,
   User as UserIcon,
+  Users,
 } from "lucide-react";
 
-import { signOut } from "@/lib/auth/client";
+import { logout } from "@/lib/auth/client";
 import { useSettings } from "@/state/useSettings";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { cn } from "@/lib/cn";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 import {
   Sidebar,
@@ -43,30 +50,35 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MicMark } from "@/components/ui/MicMark";
+import { WaveMark } from "@/components/ui/WaveMark";
 import { Kbd } from "@/components/ui/kbd";
 
 export type TabId =
   | "home"
-  | "studio"
+  | "simulate"
+  | "live"
   | "scenarios"
   | "voices"
   | "models"
   | "analytics"
   | "calls"
   | "logs"
-  | "integrations";
+  | "integrations"
+  | "team"
+  | "settings";
 
 interface NavItem {
   id: TabId;
   label: string;
   icon: React.ReactNode;
+  adminOnly?: boolean;
 }
 
 // Flat, stacked nav — no section headers (cleaner, console-style).
 const NAV_ITEMS: NavItem[] = [
   { id: "home", label: "Home", icon: <Home className="h-4 w-4" /> },
-  { id: "studio", label: "Studio", icon: <Sparkles className="h-4 w-4" /> },
+  { id: "simulate", label: "Simulation", icon: <Sparkles className="h-4 w-4" /> },
+  { id: "live", label: "Live", icon: <Radio className="h-4 w-4" /> },
   { id: "scenarios", label: "Scenarios", icon: <Layers className="h-4 w-4" /> },
   { id: "voices", label: "Voices", icon: <AudioLines className="h-4 w-4" /> },
   { id: "models", label: "Models", icon: <Boxes className="h-4 w-4" /> },
@@ -74,6 +86,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "calls", label: "Call History", icon: <History className="h-4 w-4" /> },
   { id: "logs", label: "Logs & Audit", icon: <ScrollText className="h-4 w-4" /> },
   { id: "integrations", label: "Integrations", icon: <Plug className="h-4 w-4" /> },
+  // Admin-only — filtered out for non-admins in the render below.
+  { id: "team", label: "Team", icon: <Users className="h-4 w-4" />, adminOnly: true },
 ];
 
 export function AppSidebar({
@@ -81,15 +95,18 @@ export function AppSidebar({
   onTab,
   userName,
   userEmail,
+  isAdmin = false,
 }: {
   tab: TabId;
   onTab: (t: TabId) => void;
   userName?: string;
   userEmail?: string;
+  isAdmin?: boolean;
 }) {
   const { setOpenMobile, isMobile } = useSidebar();
-  const openSettings = useSettings((s) => s.openSettings);
+  const setSettingsTab = useSettings((s) => s.setSettingsTab);
   const setCommandOpen = useSettings((s) => s.setCommandOpen);
+  const { theme, setTheme } = useTheme();
   const initial = (userName || userEmail || "?").trim().charAt(0).toUpperCase();
 
   const openSearch = () => {
@@ -107,7 +124,7 @@ export function AppSidebar({
       <SidebarHeader className="gap-2">
         <div className="flex items-center gap-2.5 px-1 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <span className="logo-mark relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-primary text-primary-foreground shadow-sm">
-            <MicMark className="h-5 w-5" />
+            <WaveMark className="h-5 w-5" />
           </span>
           <div className="leading-tight group-data-[collapsible=icon]:hidden">
             <div className="text-sm font-semibold text-foreground">Voice Labs</div>
@@ -135,7 +152,7 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin).map((item) => (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton
                     isActive={tab === item.id}
@@ -147,9 +164,8 @@ export function AppSidebar({
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              {/* Settings opens a dialog rather than navigating to a route. */}
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="Settings" onClick={() => openSettings()}>
+                <SidebarMenuButton isActive={tab === "settings"} tooltip="Settings" onClick={() => go("settings")}>
                   <Settings className="h-4 w-4" />
                   <span>Settings</span>
                 </SidebarMenuButton>
@@ -177,7 +193,15 @@ export function AppSidebar({
                   <ChevronsUpDown className="ml-auto h-4 w-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="right" align="end" className="min-w-[14rem]">
+              {/* On mobile the sidebar is a full-width overlay, so a right-side
+                  menu would open off-screen — pop it upward and match the
+                  trigger width instead. */}
+              <DropdownMenuContent
+                side={isMobile ? "top" : "right"}
+                align="end"
+                sideOffset={4}
+                className="min-w-[14rem] max-w-[calc(100vw-2rem)] md:w-auto"
+              >
                 <DropdownMenuLabel>
                   <div className="flex items-center gap-2">
                     <Avatar className="h-8 w-8 rounded-lg">
@@ -192,16 +216,42 @@ export function AppSidebar({
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => openSettings("account")}>
+                <DropdownMenuItem onSelect={() => { setSettingsTab("account"); go("settings"); }}>
                   <UserIcon />
                   Account
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => openSettings()}>
+                <DropdownMenuItem onSelect={() => go("settings")}>
                   <Settings />
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => signOut()}>
+                {/* Theme toggle — Vercel style inline picker */}
+                <div className="flex items-center justify-between px-2 py-1.5">
+                  <span className="text-sm text-muted-foreground">Theme</span>
+                  <div className="flex items-center rounded-md border border-border bg-muted p-0.5 gap-0.5">
+                    {([
+                      { value: "light", icon: <Sun className="h-3.5 w-3.5" /> },
+                      { value: "system", icon: <Monitor className="h-3.5 w-3.5" /> },
+                      { value: "dark", icon: <Moon className="h-3.5 w-3.5" /> },
+                    ] as const).map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        onClick={() => setTheme(o.value)}
+                        className={cn(
+                          "rounded p-1 transition-colors",
+                          theme === o.value
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {o.icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void logout()}>
                   <LogOut />
                   Sign out
                 </DropdownMenuItem>

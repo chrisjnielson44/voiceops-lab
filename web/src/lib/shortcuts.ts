@@ -13,7 +13,8 @@ export interface ShortcutDef {
 // Routes for the "g then key" leader navigation.
 export const NAV_SHORTCUTS: { key: string; path: string; label: string }[] = [
   { key: "h", path: "/", label: "Home" },
-  { key: "s", path: "/studio", label: "Studio" },
+  { key: "s", path: "/simulate", label: "Simulation" },
+  { key: "r", path: "/live", label: "Live" },
   { key: "n", path: "/scenarios", label: "Scenarios" },
   { key: "v", path: "/voices", label: "Voices" },
   { key: "m", path: "/models", label: "Models" },
@@ -21,6 +22,7 @@ export const NAV_SHORTCUTS: { key: string; path: string; label: string }[] = [
   { key: "c", path: "/calls", label: "Call History" },
   { key: "l", path: "/logs", label: "Logs & Audit" },
   { key: "i", path: "/integrations", label: "Integrations" },
+  { key: "t", path: "/team", label: "Team" },
 ];
 
 export const SHORTCUTS: ShortcutDef[] = [

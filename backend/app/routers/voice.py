@@ -122,6 +122,24 @@ def _default_model(models: list[dict]) -> str:
     return ids[0] if ids else settings.local_llm_model
 
 
+def _fast_model(models: list[dict]) -> str:
+    """The model Live voice should default to — a FAST non-reasoning model, since
+    a reasoning model's hidden chain-of-thought adds seconds per turn (brutal on a
+    real-time call, and LiveKit discards the CoT anyway). Prefer the configured
+    fast model, then any non-reasoning local model, then the agent default."""
+    ids = [m["id"] for m in models]
+    fast = (settings.local_llm_fast_model or "").strip()
+    if fast and fast in ids:
+        return fast
+    for m in models:
+        if m.get("kind") == "local" and not m.get("reasoning"):
+            return m["id"]
+    for m in models:
+        if not m.get("reasoning"):
+            return m["id"]
+    return _default_model(models)
+
+
 @router.get("/options")
 async def options(_user: str = Depends(require_user)):
     voices = await _elevenlabs_voices()
@@ -145,6 +163,8 @@ async def options(_user: str = Depends(require_user)):
         "defaults": {
             "scenarioId": default_scenario_id(),
             "model": _default_model(models),
+            # Live voice defaults to this (fast); Simulate uses `model` (reasoning).
+            "fastModel": _fast_model(models),
             "voiceId": voices[0]["id"] if voices else None,
             "temperature": 0.4,
         },

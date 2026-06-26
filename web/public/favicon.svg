@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- VoiceOps brand mark: the WaveMark (five-bar audio meter, center-weighted)
+       in white on the brand-purple tile — mirrors the in-app logo treatment. -->
+  <rect width="32" height="32" rx="7" fill="hsl(263.4 70% 50.4%)"/>
+  <g transform="translate(4 4)" fill="#ffffff">
+    <rect x="2.4" y="7.5" width="2.4" height="9" rx="1.2"/>
+    <rect x="6.6" y="4.5" width="2.4" height="15" rx="1.2"/>
+    <rect x="10.8" y="1.5" width="2.4" height="21" rx="1.2"/>
+    <rect x="15" y="4.5" width="2.4" height="15" rx="1.2"/>
+    <rect x="19.2" y="7.5" width="2.4" height="9" rx="1.2"/>
+  </g>
+</svg>

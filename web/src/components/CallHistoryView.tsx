@@ -97,7 +97,7 @@ function fmtStarted(iso: string | null): string {
 export function CallHistoryView() {
   const [openId, setOpenId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const openInStudio = (runId: string) => navigate({ to: "/studio", search: { runId } });
+  const openInStudio = (runId: string) => navigate({ to: "/simulate", search: { runId } });
   const { data, isLoading } = useQuery({
     queryKey: ["calls"],
     queryFn: async () => {
@@ -138,12 +138,12 @@ export function CallHistoryView() {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Payer / Scenario</TableHead>
-                  <TableHead>Model</TableHead>
+                  <TableHead className="hidden md:table-cell">Model</TableHead>
                   <TableHead>Outcome</TableHead>
                   <TableHead className="text-right">Duration</TableHead>
-                  <TableHead className="text-right">Events</TableHead>
-                  <TableHead className="text-right">Started</TableHead>
-                  <TableHead className="text-right">Replay</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Events</TableHead>
+                  <TableHead className="hidden text-right lg:table-cell">Started</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Replay</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -153,14 +153,14 @@ export function CallHistoryView() {
                       <div className="font-medium text-foreground">{c.payer ?? "—"}</div>
                       <div className="text-xs text-muted-foreground">{c.scenarioId ?? ""}</div>
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{modelLabel(c.model)}</TableCell>
+                    <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">{modelLabel(c.model)}</TableCell>
                     <TableCell>
                       <Badge variant={outcomeVariant(c.outcome)}>{c.outcome ?? c.status ?? "—"}</Badge>
                     </TableCell>
                     <TableCell className="text-right tabular text-muted-foreground">{fmtDuration(c.durationSec)}</TableCell>
-                    <TableCell className="text-right tabular text-muted-foreground">{c.eventCount}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{fmtStarted(c.startedAt)}</TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden text-right tabular text-muted-foreground sm:table-cell">{c.eventCount}</TableCell>
+                    <TableCell className="hidden text-right text-muted-foreground lg:table-cell">{fmtStarted(c.startedAt)}</TableCell>
+                    <TableCell className="hidden text-right sm:table-cell" onClick={(e) => e.stopPropagation()}>
                       <Button variant="ghost" size="sm" onClick={() => openInStudio(c.id)} title="Replay in Studio">
                         <PlayCircle className="h-4 w-4" /> Open
                       </Button>

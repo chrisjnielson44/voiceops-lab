@@ -1,32 +1,42 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Bot, User } from "lucide-react";
+import { Bot, Headset } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 
 export type MessageRole = "agent" | "user" | "payer" | "system";
 
 const ROLE_LABEL: Record<MessageRole, string> = {
-  agent: "Agent",
+  agent: "VoiceOps agent",
   user: "You",
-  payer: "Payer",
+  payer: "Payer rep",
   system: "System",
 };
 
+function clockOf(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 /**
- * A single conversation turn. The autonomous agent renders full-width and flat
- * (assistant), while the human/payer side renders as a right-aligned pill —
- * the Vercel AI Elements message convention.
+ * A single conversation turn. The autonomous agent (our side) renders full-width
+ * and flat (assistant), while the counterparty — the payer rep we're calling —
+ * renders as a right-aligned pill. `chips` carries per-turn metadata (e.g. how
+ * many records grounded the turn); `atMs` shows the call-relative clock.
  */
 export function Message({
   role,
   children,
   latencyMs,
+  atMs,
+  chips,
 }: {
   role: MessageRole;
   children: React.ReactNode;
   latencyMs?: number | null;
+  atMs?: number;
+  chips?: React.ReactNode;
 }) {
   const isAgent = role === "agent" || role === "system";
   return (
@@ -42,11 +52,13 @@ export function Message({
         </span>
       )}
       <div className={cn("min-w-0 max-w-[85%]", !isAgent && "flex flex-col items-end")}>
-        <div className="mb-1 flex items-center gap-2">
+        <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-medium text-muted-foreground">{ROLE_LABEL[role]}</span>
+          {atMs != null && <span className="tabular text-[10px] text-muted-foreground/60">{clockOf(atMs)}</span>}
           {latencyMs != null && latencyMs > 0 && (
             <span className="tabular text-[10px] text-muted-foreground/70">{latencyMs}ms</span>
           )}
+          {chips}
         </div>
         <div
           className={cn(
@@ -60,8 +72,8 @@ export function Message({
         </div>
       </div>
       {!isAgent && (
-        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
-          <User className="h-4 w-4" />
+        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-300">
+          <Headset className="h-4 w-4" />
         </span>
       )}
     </motion.div>

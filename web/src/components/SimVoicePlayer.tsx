@@ -3,8 +3,18 @@
 import { useEffect, useRef } from "react";
 
 import { useCallStore } from "@/state/useCallStore";
+import { useSettings } from "@/state/useSettings";
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Estimated time to "say" a turn, used to pace Listen mode when TTS audio isn't
+ *  available (no key / failure) so the conversation still reads back-and-forth at
+ *  a human cadence instead of racing at generation speed. ~156 wpm, clamped. */
+function estimateSpeechMs(text: string, rate: number): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const ms = (words / 2.6) * 1000;
+  return Math.min(12000, Math.max(900, ms)) / (rate || 1);
+}
 
 /**
  * Drives Simulate-mode playback so the visible conversation stays in lockstep
@@ -27,6 +37,11 @@ export function SimVoicePlayer({
 }) {
   const feed = useCallStore((s) => s.feed);
   const setReveal = useCallStore((s) => s.setPlaybackReveal);
+  // ElevenLabs only fires when the user has opted in — otherwise Listen mode
+  // paces by estimated time (no audio, no credits).
+  const ttsEnabled = useSettings((s) => s.ttsEnabled);
+  const ttsRef = useRef(ttsEnabled);
+  ttsRef.current = ttsEnabled;
 
   const feedRef = useRef(feed);
   feedRef.current = feed;
@@ -94,34 +109,53 @@ export function SimVoicePlayer({
   }, [enabled, feed.length, agentVoiceId, payerVoiceId]);
 
   async function speak(text: string, voiceId: string) {
+    // When real audio can't play, hold for the estimated speaking time instead of
+    // racing ahead — so Listen mode keeps its cadence with or without a TTS key.
+    const fallbackMs = estimateSpeechMs(text, rateRef.current);
+    // TTS disabled → pace silently, never call ElevenLabs (credit guard).
+    if (!ttsRef.current) {
+      await delay(fallbackMs);
+      return;
+    }
+    let res: Response | null = null;
     try {
-      const res = await fetch("/api/voice/tts", {
+      res = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voiceId }),
       });
-      if (!res.ok || !enabledRef.current) return;
+    } catch {
+      res = null;
+    }
+    if (!enabledRef.current) return;
+    if (!res || !res.ok) {
+      await delay(fallbackMs); // no audio (e.g. no ElevenLabs key) → timed pacing
+      return;
+    }
+    try {
       const url = URL.createObjectURL(await res.blob());
       await new Promise<void>((resolve) => {
         const audio = new Audio(url);
         audio.playbackRate = rateRef.current;
         audioRef.current = audio;
         let settled = false;
-        const done = () => {
+        const done = (waitMs = 0) => {
           if (settled) return;
           settled = true;
           clearTimeout(safety);
           URL.revokeObjectURL(url);
-          resolve();
+          if (waitMs > 0) setTimeout(resolve, waitMs);
+          else resolve();
         };
         // Safety: never let a stuck clip freeze the conversation.
-        const safety = setTimeout(done, 30000);
-        audio.onended = done;
-        audio.onerror = done;
-        audio.play().catch(done);
+        const safety = setTimeout(() => done(), 30000);
+        audio.onended = () => done();
+        // Playback failed after we got bytes — still pace by the estimate.
+        audio.onerror = () => done(fallbackMs);
+        audio.play().catch(() => done(fallbackMs));
       });
     } catch {
-      /* best-effort — silence on failure */
+      await delay(fallbackMs);
     }
   }
 

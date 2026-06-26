@@ -6,10 +6,6 @@ import {
   PhoneOutgoing,
   CheckCircle2,
   XCircle,
-  Radio,
-  Mic,
-  Server,
-  Cloud,
   ListChecks,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -17,6 +13,7 @@ import type { ProviderStatusResponse } from "@/state/useProviderStatus";
 import { useCallStore } from "@/state/useCallStore";
 import { useScenario } from "@/state/useScenario";
 import { PROVIDER_LABELS } from "@/lib/providers/registry";
+import { ProviderLogo, type ProviderLogoId } from "@/components/ProviderLogo";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -37,13 +34,15 @@ interface CallResult {
 function ConfigCard({
   label,
   icon,
+  logo,
   configured,
   detail,
   missingEnv,
   badge,
 }: {
   label: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
+  logo?: ProviderLogoId;
   configured: boolean;
   detail: string;
   missingEnv: string[];
@@ -57,9 +56,15 @@ function ConfigCard({
       className="glass rounded-2xl p-3.5 transition-shadow hover:shadow-glow"
     >
       <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground ring-1 ring-inset ring-border">
-          {icon}
-        </span>
+        {logo ? (
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl">
+            <ProviderLogo id={logo} size={32} />
+          </span>
+        ) : (
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground ring-1 ring-inset ring-border">
+            {icon}
+          </span>
+        )}
         <span className="font-medium text-foreground">{label}</span>
         <div className="ml-auto flex items-center gap-1.5">
           {badge}
@@ -123,8 +128,8 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
       {/* Demo-mode banner */}
       <div className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4">
         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-amber-600 dark:text-amber-400">Demo mode is engaged</span>
             <StatusChip tone="amber" dot pulse>
               {demoMode ? "VOICEOPS_DEMO_MODE=true" : "live mode"}
@@ -217,7 +222,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
             <ConfigCard
               key={t.id}
               label={t.label}
-              icon={t.vendor === "livekit" ? <Radio className="h-4 w-4" /> : <PhoneOutgoing className="h-4 w-4" />}
+              logo={t.vendor as ProviderLogoId}
               configured={t.configured}
               detail={t.detail}
               missingEnv={t.missingEnv}
@@ -229,7 +234,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
             <ConfigCard
               key={v.id}
               label={`${v.label} · voice`}
-              icon={<Mic className="h-4 w-4" />}
+              logo={v.id as ProviderLogoId}
               configured={v.configured}
               detail={v.detail}
               missingEnv={v.missingEnv}
@@ -243,7 +248,7 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
               <ConfigCard
                 key={p.id}
                 label={`${PROVIDER_LABELS[p.id]} · LLM`}
-                icon={p.kind === "local" ? <Server className="h-4 w-4" /> : <Cloud className="h-4 w-4" />}
+                logo={p.id as ProviderLogoId}
                 configured={p.configured}
                 detail={p.detail}
                 missingEnv={p.missingEnv}
@@ -257,7 +262,9 @@ export function TelephonyView({ providerStatus }: { providerStatus: ProviderStat
       <Card className="flex flex-col">
         <CardHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b border-border px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-muted-foreground"><Radio className="h-4 w-4" /></span>
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-lg">
+              <ProviderLogo id="livekit" size={24} />
+            </span>
             <div className="min-w-0">
               <CardTitle className="truncate">LiveKit voice agent</CardTitle>
               <p className="truncate text-xs text-muted-foreground">Deployable Python agent in /agent — same tools + local model, over real STT/LLM/TTS</p>

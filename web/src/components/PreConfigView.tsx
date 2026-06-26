@@ -6,15 +6,17 @@ import {
   AlertCircle,
   Brain,
   ChevronDown,
+  Keyboard,
   Mic,
   Play,
   Radio,
   Sparkles,
-  Wand2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { RoleCard } from "@/components/RoleCard";
 import {
   Select,
   SelectContent,
@@ -34,7 +36,7 @@ export interface VoiceOptions {
   scenarios: ScenarioOpt[];
   voices: VoiceOpt[];
   models: ModelOpt[];
-  defaults: { scenarioId: string; model: string; voiceId: string | null; temperature: number };
+  defaults: { scenarioId: string; model: string; fastModel?: string; voiceId: string | null; temperature: number };
   speechProvider: string | null;
 }
 
@@ -47,6 +49,10 @@ export function PreConfigView({
   options,
   mode,
   onMode,
+  lockMode = false,
+  pageTitle = "Studio",
+  transport = "text",
+  onTransport,
   scenarioId,
   onScenario,
   model,
@@ -64,6 +70,12 @@ export function PreConfigView({
   options: VoiceOptions | undefined;
   mode: "simulate" | "live";
   onMode: (m: "simulate" | "live") => void;
+  /** When the route owns the mode (/simulate, /live), hide the mode toggle. */
+  lockMode?: boolean;
+  pageTitle?: string;
+  /** Live only: how the human plays the payer rep. */
+  transport?: "text" | "voice";
+  onTransport?: (t: "text" | "voice") => void;
   scenarioId: string;
   onScenario: (id: string) => void;
   model: string;
@@ -78,30 +90,66 @@ export function PreConfigView({
   launching: boolean;
   error: string | null;
 }) {
+  // Live voice needs the agent's TTS voice; text role-play and simulate's TTS
+  // both use it too, but a live TEXT session has no speech at all.
+  const liveVoice = mode === "live" && transport === "voice";
+  const liveText = mode === "live" && transport === "text";
   const [advanced, setAdvanced] = useState(false);
+  // On mobile the scenarios stack into one tall column, so collapse to a few and
+  // let the user expand. On `sm`+ they sit in a grid, so all are always shown.
+  const [showAllScenarios, setShowAllScenarios] = useState(false);
+  const MOBILE_SCENARIO_LIMIT = 3;
   const selectedModel = options?.models.find((m) => m.id === model);
   const ready = !!scenarioId && !!model;
+  const scenarioList = options?.scenarios ?? [];
+  const hiddenScenarioCount = Math.max(0, scenarioList.length - MOBILE_SCENARIO_LIMIT);
+  // Never hide the active scenario behind the fold — expand if it's past the limit.
+  const selectedScenarioIndex = scenarioList.findIndex((s) => s.id === scenarioId);
+  const scenariosExpanded = showAllScenarios || selectedScenarioIndex >= MOBILE_SCENARIO_LIMIT;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 py-6">
-      {/* Hero */}
-      <div className="flex flex-col items-center gap-3 text-center">
-        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-500/10 text-brand-600 dark:text-brand-300">
-          <Wand2 className="h-6 w-6" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Configure a session</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pick a scenario and a model, then watch the agent reason over a context graph and anticipate the call.
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={pageTitle}
+        actions={
+          lockMode ? null : (
+            <div className="inline-flex rounded-full border border-border bg-card/50 p-1">
+              <ModeButton active={mode === "simulate"} onClick={() => onMode("simulate")} icon={<Sparkles className="h-3.5 w-3.5" />} label="Simulate" />
+              <ModeButton active={mode === "live"} onClick={() => onMode("live")} icon={<Radio className="h-3.5 w-3.5" />} label="Live" />
+            </div>
+          )
+        }
+      />
 
-      {/* Mode */}
-      <div className="mx-auto inline-flex rounded-full border border-border bg-card/50 p-1">
-        <ModeButton active={mode === "simulate"} onClick={() => onMode("simulate")} icon={<Sparkles className="h-3.5 w-3.5" />} label="Simulate" />
-        <ModeButton active={mode === "live"} onClick={() => onMode("live")} icon={<Radio className="h-3.5 w-3.5" />} label="Live voice" />
-      </div>
+      <p className="-mt-2 max-w-2xl text-sm text-muted-foreground">
+        {mode === "live"
+          ? "The agent leads the call and you play the payer rep — by text or by voice. Its reasoning over the context graph and its anticipation stream as you talk."
+          : "The agent and a simulated payer converse end-to-end. Watch the agent reason over a context graph and anticipate the call."}
+      </p>
+
+      {/* Live: choose how you participate (you are the payer rep either way). */}
+      {mode === "live" && (
+        <section className="flex flex-col gap-3">
+          <SectionLabel>How you'll play the rep</SectionLabel>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TransportCard
+              active={transport === "text"}
+              onClick={() => onTransport?.("text")}
+              icon={<Keyboard className="h-4 w-4" />}
+              title="Text role-play"
+              desc="Type the rep's replies. The agent leads and reasons out loud. No mic or keys needed."
+            />
+            <TransportCard
+              active={transport === "voice"}
+              onClick={() => onTransport?.("voice")}
+              icon={<Mic className="h-4 w-4" />}
+              title="Voice call"
+              desc="Speak as the rep over a real LiveKit call. Needs a speech provider + worker — and uses ElevenLabs credits. Text role-play uses none."
+            />
+          </div>
+          <RoleCard scenarioId={scenarioId} />
+        </section>
+      )}
 
       {error && (
         <div className="glass flex items-center gap-2 rounded-2xl border-amber-500/20 px-4 py-2.5 text-sm text-amber-600 dark:text-amber-400">
@@ -113,10 +161,17 @@ export function PreConfigView({
       <section className="flex flex-col gap-3">
         <SectionLabel>Scenario</SectionLabel>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {(options?.scenarios ?? []).map((s) => {
+          {scenarioList.map((s, i) => {
             const selected = s.id === scenarioId;
+            // Hide items past the limit on mobile only (always visible on sm+).
+            const collapsedOnMobile = !scenariosExpanded && i >= MOBILE_SCENARIO_LIMIT;
             return (
-              <button key={s.id} type="button" onClick={() => onScenario(s.id)} className="text-left">
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => onScenario(s.id)}
+                className={cn("text-left", collapsedOnMobile && "hidden sm:block")}
+              >
                 <Card
                   className={cn(
                     "flex h-full flex-col gap-2 p-4 transition-all",
@@ -137,6 +192,18 @@ export function PreConfigView({
             );
           })}
         </div>
+        {hiddenScenarioCount > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAllScenarios((v) => !v)}
+            className="self-start text-muted-foreground sm:hidden"
+          >
+            {scenariosExpanded ? "Show fewer" : `View ${hiddenScenarioCount} more`}
+            <ChevronDown className={cn("h-4 w-4 transition-transform", scenariosExpanded && "rotate-180")} />
+          </Button>
+        )}
       </section>
 
       {/* Model */}
@@ -165,11 +232,13 @@ export function PreConfigView({
             ? "This model thinks out loud — its chain-of-thought streams into the reasoning trace, interleaved with the graph walk and predictions."
             : "Pick a reasoning model (qwen3 / gemma) to watch the agent's chain-of-thought stream inline."}
           {mode === "simulate" && " The payer and predictor run on a faster model to keep the simulation responsive."}
+          {liveText && " You play the payer, so only the agent and predictor run a model."}
         </p>
       </section>
 
-      {/* Voice — heard in BOTH modes (Simulate plays it via TTS; Live speaks it) */}
-      {(options?.voices?.length ?? 0) > 0 && (
+      {/* Voice picker — simulate's TTS read-aloud, or the live voice call. Hidden
+          for text role-play (no speech). */}
+      {(mode === "simulate" || liveVoice) && (options?.voices?.length ?? 0) > 0 && (
         <section className="flex flex-col gap-3">
           <SectionLabel>
             Agent voice
@@ -191,8 +260,9 @@ export function PreConfigView({
         </section>
       )}
 
-      {/* Live-only sampling controls */}
-      {mode === "live" && (
+      {/* Live VOICE sampling + system prompt (the call's LLM). Text role-play
+          uses the orchestrator's prompt, so it's not exposed here. */}
+      {liveVoice && (
         <section className="flex flex-col gap-3">
           <button
             type="button"
@@ -231,16 +301,39 @@ export function PreConfigView({
           <Button onClick={onLaunch} disabled={!ready || launching} size="lg" className="px-8">
             {launching ? (
               <Radio className="h-4 w-4 animate-pulse" />
-            ) : mode === "live" ? (
+            ) : liveText ? (
+              <Keyboard className="h-4 w-4" />
+            ) : liveVoice ? (
               <Mic className="h-4 w-4" />
             ) : (
               <Play className="h-4 w-4" />
             )}
-            {launching ? "Starting…" : mode === "live" ? "Start session" : "Start simulation"}
+            {launching ? "Starting…" : liveText ? "Start role-play" : liveVoice ? "Start call" : "Start simulation"}
           </Button>
         </motion.div>
       </div>
     </div>
+  );
+}
+
+function TransportCard({ active, onClick, icon, title, desc }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string; desc: string }) {
+  return (
+    <button type="button" onClick={onClick} className="text-left">
+      <Card
+        className={cn(
+          "flex h-full items-start gap-3 p-4 transition-all",
+          active ? "ring-2 ring-brand-500 ring-offset-2 ring-offset-background" : "hover:border-foreground/20",
+        )}
+      >
+        <span className={cn("mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg", active ? "bg-brand-500/15 text-brand-600 dark:text-brand-300" : "bg-secondary text-muted-foreground")}>
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{desc}</p>
+        </div>
+      </Card>
+    </button>
   );
 }
 

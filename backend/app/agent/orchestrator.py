@@ -121,9 +121,19 @@ async def run_orchestrator(run: RunState) -> None:
         audit_buffer.append(wire)
         emit(run, ev.audit_event(event))
 
-    def push_turn(speaker: str, text: str, latency_ms: int | None = None) -> None:
+    def push_turn(
+        speaker: str,
+        text: str,
+        latency_ms: int | None = None,
+        *,
+        grounded: int | None = None,
+        anticipated: int | None = None,
+    ) -> None:
         nonlocal seq
-        turn = LiveTurn(id=f"t-{seq}", seq=seq, speaker=speaker, text=text, at_ms=now(), latency_ms=latency_ms)
+        turn = LiveTurn(
+            id=f"t-{seq}", seq=seq, speaker=speaker, text=text, at_ms=now(),
+            latency_ms=latency_ms, grounded=grounded, anticipated=anticipated,
+        )
         seq += 1
         emit(run, ev.turn_event(turn))
 
@@ -253,7 +263,7 @@ async def run_orchestrator(run: RunState) -> None:
                 started = now()
                 res = await pack.prefetch(
                     tool_name, tool_args,
-                    pack.tool_context(run_id=run.id, scenario=scenario, transcript=snapshot),
+                    pack.tool_context(run_id=run.id, scenario=scenario, transcript=snapshot, model=agent_model),
                 )
                 lat = now() - started
                 run.prefetch_cache[key] = {
@@ -474,7 +484,7 @@ async def run_orchestrator(run: RunState) -> None:
                     res = await pack.execute_tool(
                         tool_name,
                         tool_args,
-                        pack.tool_context(run_id=run.id, scenario=scenario, transcript=transcript_text),
+                        pack.tool_context(run_id=run.id, scenario=scenario, transcript=transcript_text, model=agent_model),
                     )
                     if run.pred_stats.get("misses") is not None:
                         run.pred_stats["misses"] += 1
@@ -488,7 +498,19 @@ async def run_orchestrator(run: RunState) -> None:
                 # Surface any tool-returned rows into the graph so later turns see them.
                 if run.graph is not None and res.data:
                     try:
-                        run.graph.widen(tool_name.replace("verify_", "").replace("lookup_", "member"), [res.data])
+                        if tool_name == "note_fact":
+                            # The agent recorded a fact ON the call — add it to the
+                            # live memory graph and mark it discovered so it shows in
+                            # the viz now and grounds later turns ("record + look back").
+                            nid = run.graph.note(
+                                str(res.data.get("label") or ""),
+                                str(res.data.get("value") or ""),
+                                kind=str(res.data.get("kind") or "note"),
+                            )
+                            if nid:
+                                run.discovered.add(nid)
+                        else:
+                            run.graph.widen(tool_name.replace("verify_", "").replace("lookup_", "member"), [res.data])
                     except Exception:  # noqa: BLE001
                         pass
 
@@ -543,7 +565,12 @@ async def run_orchestrator(run: RunState) -> None:
 
             # ---- AGENT speaks ----
             text = (decision.get("text") or "").strip() or "Thank you, one moment."
-            push_turn("agent", text, dec.latency_ms)
+            grounded_n = sum(1 for ln in ctx_str.splitlines() if ln.strip()) if ctx_str else 0
+            push_turn(
+                "agent", text, dec.latency_ms,
+                grounded=grounded_n or None,
+                anticipated=len(warmed_intents_now()) or None,
+            )
             transcript_text += f"\nAGENT: {text}"
             snippet = text[:72] + ("…" if len(text) > 72 else "")
             push_audit(
@@ -555,22 +582,38 @@ async def run_orchestrator(run: RunState) -> None:
                 model=local_model_id(),
             )
 
-            # ---- PAYER replies (second live model) ----
+            # ---- PAYER replies ----
+            # Autonomous: a second model plays the payer. Role-play (human_payer):
+            # the agent leads and a human plays the rep — we await their typed reply
+            # instead of running the model.
             if run.stopped:
                 outcome = "stopped"
                 break
             await wait_while_paused()
-            payer_msgs.append({"role": "user", "content": text})
-            pr = await chat_json(payer_msgs, temperature=0.45, max_tokens=512, model=fast_model, abort=abort)
-            metrics.inferences += 1
-            metrics.completion_tokens += pr.completion_tokens
-            latencies.append(pr.latency_ms)
-            payer = pr.value if isinstance(pr.value, dict) else None
-            if payer is None:
-                payer = {"text": "I'm sorry, could you repeat that?", "ends": False, "escalate": False}
-            payer_msgs.append({"role": "assistant", "content": json.dumps(payer)})
-            payer_text = (payer.get("text") or "").strip() or "Let me check on that."
-            push_turn("payer", payer_text, pr.latency_ms)
+            if run.human_payer:
+                # Forecast the rep's reply to the agent's turn BEFORE we wait — the
+                # human plays the payer, so these predictions become the suggested
+                # replies shown while they type (anticipation lands during the wait).
+                fire_anticipation()
+                payer_text = await _await_human_payer(run)
+                if payer_text is None:  # stopped while waiting
+                    outcome = "stopped"
+                    break
+                payer = {"text": payer_text, "ends": False, "escalate": False}
+                payer_latency = None
+            else:
+                payer_msgs.append({"role": "user", "content": text})
+                pr = await chat_json(payer_msgs, temperature=0.45, max_tokens=512, model=fast_model, abort=abort)
+                metrics.inferences += 1
+                metrics.completion_tokens += pr.completion_tokens
+                latencies.append(pr.latency_ms)
+                payer = pr.value if isinstance(pr.value, dict) else None
+                if payer is None:
+                    payer = {"text": "I'm sorry, could you repeat that?", "ends": False, "escalate": False}
+                payer_msgs.append({"role": "assistant", "content": json.dumps(payer)})
+                payer_text = (payer.get("text") or "").strip() or "Let me check on that."
+                payer_latency = pr.latency_ms
+            push_turn("payer", payer_text, payer_latency)
             had_payer_exchange = True
             transcript_text += f"\nPAYER: {payer_text}"
             agent_msgs.append({"role": "user", "content": f"PAYER said: {payer_text}"})
@@ -578,7 +621,10 @@ async def run_orchestrator(run: RunState) -> None:
             # ---- ANTICIPATORY PREDICTION + PREFETCH (off the critical path) ----
             # Fire-and-forget: forecast + warm the cache for likely next tools
             # while the loop moves on. Cancelled if superseded or the run stops.
-            fire_anticipation()
+            # In role-play we already fired before the human's turn (above), so we
+            # don't double-fire here.
+            if not run.human_payer:
+                fire_anticipation()
 
             emit(run, ev.status_event("active", phase_from_prediction(last_prediction), now()))
             push_metrics()
@@ -646,6 +692,29 @@ async def run_orchestrator(run: RunState) -> None:
         if run.pred_task and not run.pred_task.done():
             run.pred_task.cancel()
         run_store.close_subscribers(run)
+
+
+async def _await_human_payer(run: RunState) -> str | None:
+    """Block the loop until the human (playing the payer rep) submits a reply via
+    POST /api/agent/say, or the run is stopped. Emits `await` events so the UI can
+    show/hide the reply box. Returns the text, or None if the call was stopped."""
+    emit(run, ev.await_event(True, "payer"))
+    get_task = asyncio.create_task(run.payer_inbox.get())
+    abort_task = asyncio.create_task(run.abort.wait())
+    try:
+        done, pending = await asyncio.wait({get_task, abort_task}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        emit(run, ev.await_event(False, "payer"))
+    for t in (get_task, abort_task):
+        if t not in done:
+            t.cancel()
+    if get_task in done and not run.stopped:
+        try:
+            text = get_task.result()
+        except Exception:  # noqa: BLE001
+            return None
+        return (text or "").strip() or "…"
+    return None
 
 
 def _normalize_prediction(raw: dict[str, Any], scenario: Scenario) -> PredictionSnapshot:

@@ -58,3 +58,17 @@ async def require_user(
         raise HTTPException(status_code=401, detail="authentication required")
     # Dev/test/preview fallback.
     return (x_voiceops_user or "").strip() or settings.demo_user_id
+
+
+async def require_admin(request: Request) -> str:
+    """Like `require_user`, but the session user's role must be `admin`. Falls
+    back to the demo user in dev/test (when REQUIRE_AUTH is off) so local tooling
+    keeps working; 403s in production for non-admins."""
+    user = await _session_user(request)
+    if user and user.get("role") == "admin" and user.get("id"):
+        return str(user["id"])
+    if settings.require_auth:
+        if user and user.get("id"):
+            raise HTTPException(status_code=403, detail="admin access required")
+        raise HTTPException(status_code=401, detail="authentication required")
+    return settings.demo_user_id

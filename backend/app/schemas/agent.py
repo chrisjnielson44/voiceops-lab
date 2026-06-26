@@ -21,6 +21,11 @@ class LiveTurn(CamelModel):
     text: str
     at_ms: int
     latency_ms: int | None = None
+    # How many verified records the context graph fed into this turn, and how many
+    # of those were pre-loaded by anticipation (folded/warmed for the likely next
+    # ask). Surfaced as chips on the agent turn. None on payer/ungrounded turns.
+    grounded: int | None = None
+    anticipated: int | None = None
 
 
 class LiveTool(CamelModel):
@@ -241,6 +246,12 @@ def metrics_event(metrics: RunMetrics) -> dict:
 
 def error_event(message: str) -> dict:
     return {"kind": "error", "message": message}
+
+
+def await_event(awaiting: bool, role: str = "payer") -> dict:
+    """Signals the UI that the loop is paused for a human turn (text role-play:
+    the agent leads, the human plays the counterparty)."""
+    return {"kind": "await", "awaiting": awaiting, "role": role}
 
 
 def done_event(outcome: Literal["completed", "escalated", "stopped"]) -> dict:

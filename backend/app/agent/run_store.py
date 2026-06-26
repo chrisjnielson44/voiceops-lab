@@ -32,6 +32,15 @@ class RunState:
     paused: bool = False
     stopped: bool = False
     done: bool = False
+    # True for out-of-process LiveKit voice runs fed via the ingest bridge (no
+    # in-process orchestrator task); used so the SSE endpoint can attach to a
+    # run it didn't start.
+    live: bool = False
+    # Text role-play: the agent leads and a human plays the counterparty. The
+    # orchestrator awaits `payer_inbox` for the human's reply instead of running
+    # the payer model. Fed by POST /api/agent/say.
+    human_payer: bool = False
+    payer_inbox: asyncio.Queue = field(default_factory=asyncio.Queue)
     started_at: float = field(default_factory=now_ms)
     abort: asyncio.Event = field(default_factory=asyncio.Event)
     task: asyncio.Task | None = None
@@ -53,8 +62,10 @@ class RunState:
 _runs: dict[str, RunState] = {}
 
 
-def create_run(*, id: str, scenario_id: str, model: str, user_id: str | None = None) -> RunState:
-    run = RunState(id=id, scenario_id=scenario_id, model=model, user_id=user_id)
+def create_run(
+    *, id: str, scenario_id: str, model: str, user_id: str | None = None, human_payer: bool = False
+) -> RunState:
+    run = RunState(id=id, scenario_id=scenario_id, model=model, user_id=user_id, human_payer=human_payer)
     _runs[id] = run
     # Evict old finished runs to bound memory.
     if len(_runs) > 50:

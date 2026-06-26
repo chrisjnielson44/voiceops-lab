@@ -18,6 +18,7 @@ const NODE_COLOR: Record<string, string> = {
   auth: "#8b5cf6",
   provider: "#64748b",
   payer: "#3b82f6",
+  note: "#ec4899",
 };
 
 const PHASE_META: Record<ReasoningSegment["phase"], { icon: typeof Brain; tint: string; ring: string }> = {
@@ -79,12 +80,23 @@ export function ReasoningTrace({ reasoning }: { reasoning: LiveReasoning }) {
       </button>
 
       <CollapsibleContent open={open}>
-        <div className="space-y-3 border-t border-border px-3 py-3">
-          {reasoning.segments.map((seg, i) => (
-            <Segment key={i} seg={seg} last={i === reasoning.segments.length - 1} streaming={streaming} />
-          ))}
+        <div className="border-t border-border px-3 py-3">
+          <ReasoningSegments reasoning={reasoning} streaming={streaming} />
         </div>
       </CollapsibleContent>
+    </div>
+  );
+}
+
+/** The reasoning timeline body (graph walk → chain-of-thought → predictions),
+ *  without the outer disclosure chrome — reused by AgentActivity so the dialogue
+ *  can own a single "worked on this" toggle. */
+export function ReasoningSegments({ reasoning, streaming }: { reasoning: LiveReasoning; streaming?: boolean }) {
+  return (
+    <div className="space-y-3">
+      {reasoning.segments.map((seg, i) => (
+        <Segment key={i} seg={seg} last={i === reasoning.segments.length - 1} streaming={!!streaming} />
+      ))}
     </div>
   );
 }

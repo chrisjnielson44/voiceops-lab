@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { signIn, signUp } from "@/lib/auth/client";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { signIn } from "@/lib/auth/client";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import Waves from "@/components/ui/backgrounds/Waves";
@@ -12,13 +11,9 @@ import "@/components/ui/backgrounds/backgrounds.css";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { MicMark } from "@/components/ui/MicMark";
-
-type Mode = "signin" | "signup";
+import { WaveMark } from "@/components/ui/WaveMark";
 
 export function AuthScreen() {
-  const [mode, setMode] = useState<Mode>("signin");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +27,8 @@ export function AuthScreen() {
     setBusy(true);
     setError(null);
     try {
-      const res =
-        mode === "signin"
-          ? await signIn.email({ email, password })
-          : await signUp.email({ email, password, name: name || email.split("@")[0] });
+      // Sign-in only — accounts are provisioned by an admin (sign-up disabled).
+      const res = await signIn.email({ email, password });
       if (res.error) {
         setError(res.error.message ?? "Authentication failed.");
       }
@@ -73,57 +66,14 @@ export function AuthScreen() {
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
             className="logo-mark liquid-glass relative mb-4 flex h-16 w-16 items-center justify-center rounded-2xl text-foreground shadow-pop"
           >
-            <MicMark className="h-9 w-9" />
+            <WaveMark className="h-9 w-9" />
           </motion.div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Voice Labs</h1>
         </div>
 
         <div className="liquid-glass liquid-glass-edge rounded-3xl p-6 shadow-pop">
-          <Tabs
-            value={mode}
-            onValueChange={(val) => {
-              setMode(val as Mode);
-              setError(null);
-            }}
-            className="mb-5"
-          >
-            <TabsList className="w-full">
-              <TabsTrigger value="signin" className="flex-1">Sign in</TabsTrigger>
-              <TabsTrigger value="signup" className="flex-1">Create account</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
           <form onSubmit={submit} className="space-y-3">
-            <AnimatePresence initial={false}>
-              {mode === "signup" && (
-                <motion.div
-                  key="name-field"
-                  initial={reduce ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                  animate={reduce ? { opacity: 1 } : { opacity: 1, height: "auto" }}
-                  exit={
-                    reduce
-                      ? { opacity: 0 }
-                      : { opacity: 0, height: 0, transition: { duration: 0.18, ease: "easeInOut" } }
-                  }
-                  transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-                  className="overflow-hidden"
-                >
-                  <div className="pb-3">
-                    <Field label="Name" htmlFor="auth-name">
-                      <Input
-                        id="auth-name"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        autoComplete="name"
-                        placeholder="Jordan Lee"
-                      />
-                    </Field>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <Field label="Work email" htmlFor="auth-email">
+            <Field label="Email" htmlFor="auth-email">
               <Input
                 id="auth-email"
                 type="email"
@@ -142,8 +92,8 @@ export function AuthScreen() {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                placeholder="At least 8 characters"
+                autoComplete="current-password"
+                placeholder="Your password"
               />
             </Field>
 
@@ -165,9 +115,10 @@ export function AuthScreen() {
 
             <Button type="submit" disabled={busy} size="lg" className="mt-1 w-full">
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
+              Sign in
             </Button>
           </form>
+
 
         </div>
       </motion.div>

@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import db
 from app.config import settings
 from app.core.logging import configure_logging, request_id_ctx
-from app.routers import agent, analytics, calls, health, providers, scenarios, telephony, voice
+from app.routers import agent, analytics, calls, health, providers, scenarios, seed, telephony, voice
 
 configure_logging(level=settings.log_level, as_json=settings.log_json)
 log = logging.getLogger("voiceops")
@@ -48,6 +48,16 @@ async def lifespan(app: FastAPI):
         log.info("Connected to Postgres pool.")
     except Exception as e:  # noqa: BLE001
         log.warning("Database pool not initialized: %s", e)
+    # Warm the custom-scenario cache from Neon so the (sync) pack registry can
+    # resolve user-authored scenarios. Best-effort — degrades to none if the DB
+    # is unreachable.
+    try:
+        from app.packs import custom_store
+
+        await custom_store.load_all()
+        log.info("Loaded %d custom scenario(s).", len(custom_store.list_scenarios()))
+    except Exception as e:  # noqa: BLE001
+        log.warning("Custom scenarios not loaded: %s", e)
     try:
         yield
     finally:
@@ -97,6 +107,7 @@ app.include_router(calls.router)
 app.include_router(providers.router)
 app.include_router(telephony.router)
 app.include_router(scenarios.router)
+app.include_router(seed.router)
 app.include_router(voice.router)
 
 

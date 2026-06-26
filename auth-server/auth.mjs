@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import pg from "pg";
 import { betterAuth } from "better-auth";
+import { admin, organization } from "better-auth/plugins";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,7 +57,9 @@ export const auth = betterAuth({
   database: pool,
   emailAndPassword: {
     enabled: true,
-    autoSignIn: true,
+    // Accounts are provisioned by an admin only — no public self-service signup.
+    // The signup endpoint is disabled; the seed script + admin plugin create users.
+    disableSignUp: true,
     minPasswordLength: 8,
   },
   session: {
@@ -66,4 +69,16 @@ export const auth = betterAuth({
   },
   // The Vite SPA's origin (and the proxy origin) must be trusted for CSRF.
   trustedOrigins,
+  plugins: [
+    // Global roles + admin-only user management (create/list/set-role/remove,
+    // set-password, ban). Adds role/banned columns to the user table.
+    admin({ defaultRole: "user", adminRoles: ["admin"] }),
+    // Organizations + teams. We model VoiceAdmin as a single workspace org with
+    // a VoiceAdmin team; membership gates access (no per-team data isolation).
+    // Org creation is admin/seed-driven, so end users can't spin up orgs.
+    organization({
+      allowUserToCreateOrganization: false,
+      teams: { enabled: true, defaultTeam: { enabled: false } },
+    }),
+  ],
 });

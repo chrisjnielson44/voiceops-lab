@@ -43,6 +43,26 @@ def test_retrieve_lights_claim_and_context_has_facts():
     sub, ctx = g.retrieve("Why was the claim denied?", missing_fields=["denial_reason", "resubmission_path"], intent="claim-status")
     lit_types = {n.type for n in sub.nodes if n.lit}
     assert "claim" in lit_types and "carc" in lit_types
+
+
+def test_note_records_a_conversational_fact_and_grounds_it_back():
+    """The agent's live notes become graph nodes linked to the member, always lit,
+    and serialized into the grounding so it can 'look back' on later turns."""
+    s, member, coverage, claims = _denied_claim_rows()
+    g = ContextGraph.build(s, member=member, coverage=coverage, claims=claims, prior_auths=[])
+
+    nid = g.note("Rep name", "Christopher Nielson")
+    assert nid and nid.startswith("note:")
+
+    sub, ctx = g.retrieve("", intent="claim-status")
+    note = next(n for n in sub.nodes if n.id == nid)
+    assert note.type == "note" and note.lit  # always surfaced
+    # Anchored to the member by a NOTED edge.
+    assert any(e.label == "NOTED" and e.target == nid and e.source == f"member:{s.patient.member_id}" for e in sub.edges)
+    # And it's in the serialized grounding the agent reads next turn.
+    assert "Christopher Nielson" in ctx
+    # A second mention re-seeds it (token match), and empty notes are ignored.
+    assert g.note("", "") is None
     assert s.claim.id in ctx and "CO-197" in ctx
     assert "Precert" in ctx  # denial reason surfaced
 

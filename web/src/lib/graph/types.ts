@@ -12,7 +12,8 @@ export type GraphNodeType =
   | "auth"
   | "provider"
   | "payer"
-  | "carc";
+  | "carc"
+  | "note";
 
 export interface GraphNode {
   id: string; // "type:natural_key"

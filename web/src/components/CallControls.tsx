@@ -125,7 +125,7 @@ export function CallControls() {
         <div className="mt-3 flex gap-2">
           <Button
             type="button"
-            onClick={onPrimary}
+            onClick={() => onPrimary()}
             className={cn(
               "flex-1",
               running && "bg-amber-500 text-primary-foreground hover:bg-amber-600",

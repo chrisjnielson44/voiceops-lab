@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0b" />
     <!-- Geist — a modern, technical typeface (sans + mono). -->
@@ -30,6 +32,18 @@
         } catch (e) {
           document.documentElement.classList.add("dark");
           document.documentElement.style.colorScheme = "dark";
+        }
+      })();
+    </script>
+    <!-- Blocking accent script: apply data-accent before first paint (no FOUC). -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("voiceops-accent") || "purple";
+          var a = ["purple","blue","green","amber","rose","orange"].indexOf(raw) !== -1 ? raw : "purple";
+          document.documentElement.setAttribute("data-accent", a);
+        } catch (e) {
+          document.documentElement.setAttribute("data-accent", "purple");
         }
       })();
     </script>

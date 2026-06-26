@@ -1,23 +1,28 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ArrowRight,
   AudioLines,
   BarChart3,
+  Check,
   Clock,
-  Cloud,
+  Database,
   History,
+  Loader2,
   Mic,
   PhoneCall,
   Plug,
   Radio,
   ScrollText,
-  Server,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
 
+import { getModelProvider } from "@/lib/modelProvider";
+import { WaveMark } from "@/components/ui/WaveMark";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -95,7 +100,9 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
   const setMode = useCallStore((s) => s.setMode);
   const { data: session } = useSession();
   const { data: providers } = useProviderStatus();
+  const queryClient = useQueryClient();
   const firstName = (session?.user?.name ?? "").trim().split(/\s+/)[0];
+  const [seeding, setSeeding] = useState(false);
 
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ["analytics"],
@@ -128,10 +135,43 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
   const models = (options?.models ?? []).slice(0, 3);
   const localOk = providers?.localLLM?.ok;
 
+  // The cockpit is "empty" until at least one call exists. We only commit to the
+  // empty layout once data has actually loaded, so we don't flash onboarding at a
+  // returning user mid-fetch.
+  const dataLoaded = callsData != null && analytics != null;
+  const hasData = (callsData?.calls.length ?? 0) > 0 || (t?.totalCalls ?? 0) > 0;
+  const showOnboarding = dataLoaded && !hasData;
+
+  const providerConnected =
+    (providers?.telephony ?? []).some((p) => p.configured) ||
+    (providers?.voice ?? []).some((p) => p.configured);
+
   const startScenario = (id: string) => {
     setPlaygroundDefaults({ scenarioId: id });
     setMode("simulate");
-    onNavigate("/studio");
+    onNavigate("/simulate");
+  };
+
+  const loadDemoData = async () => {
+    setSeeding(true);
+    try {
+      const r = await fetch("/api/demo/seed", { method: "POST" });
+      const body = (await r.json().catch(() => ({}))) as { ok?: boolean; inserted?: number; error?: string };
+      if (!r.ok || body.ok === false) throw new Error(body.error || `seed ${r.status}`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["analytics"] }),
+        queryClient.invalidateQueries({ queryKey: ["calls"] }),
+      ]);
+      toast.success(`Loaded ${body.inserted ?? 0} sample calls`, {
+        description: "Analytics, Call History and your dashboard are now populated.",
+      });
+    } catch (e) {
+      toast.error("Couldn't load demo data", {
+        description: e instanceof Error ? e.message : "Please try again.",
+      });
+    } finally {
+      setSeeding(false);
+    }
   };
 
   const kpis = [
@@ -148,13 +188,51 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
     { label: "Integrations", desc: "Telephony & providers", icon: <Plug className="h-4 w-4" />, path: "/integrations" },
   ];
 
+  // Getting-started steps reflect real app state: completed steps get a check and
+  // gray out, so the checklist is a live progress tracker, not static copy.
+  const steps = [
+    {
+      title: "Run a simulation",
+      desc: "Watch the agent work a payer call end-to-end — no phone, no API keys.",
+      icon: <Radio className="h-5 w-5" />,
+      cta: "Simulate",
+      done: false,
+      action: () => { setMode("simulate"); onNavigate("/simulate"); },
+    },
+    {
+      title: "Try a live voice session",
+      desc: "Talk to the agent in real time and hear it respond.",
+      icon: <Mic className="h-5 w-5" />,
+      cta: "Go live",
+      done: false,
+      action: () => { setMode("live"); onNavigate("/live"); },
+    },
+    {
+      title: "Connect a provider",
+      desc: "Wire up telephony or a voice provider to take real calls.",
+      icon: <Plug className="h-5 w-5" />,
+      cta: providerConnected ? "Manage" : "Connect",
+      done: providerConnected,
+      action: () => onNavigate("/integrations"),
+    },
+    {
+      title: "Load demo data",
+      desc: "Populate Analytics, Call History and your dashboard with sample calls.",
+      icon: <Database className="h-5 w-5" />,
+      cta: seeding ? "Loading…" : "Load data",
+      done: hasData,
+      loading: seeding,
+      action: loadDemoData,
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-7">
       {/* Greeting + primary actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <span className="logo-mark grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-            <Mic className="h-6 w-6" />
+            <WaveMark className="h-6 w-6" />
           </span>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -164,39 +242,85 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
               <StatusChip tone={localOk ? "green" : "slate"} dot pulse={localOk}>
                 {localOk ? "runtime online" : "runtime offline"}
               </StatusChip>
+              {showOnboarding && (
+                <span className="text-xs text-muted-foreground">Welcome to your voice-agent sandbox</span>
+              )}
             </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => { setMode("live"); onNavigate("/studio"); }}>
-            <Mic className="h-4 w-4" /> New session
+          <Button onClick={() => { setMode("live"); onNavigate("/live"); }}>
+            <Mic className="h-4 w-4" /> Live session
           </Button>
-          <Button variant="outline" onClick={() => { setMode("simulate"); onNavigate("/studio"); }}>
+          <Button variant="outline" onClick={() => { setMode("simulate"); onNavigate("/simulate"); }}>
             <Radio className="h-4 w-4" /> Run a simulation
           </Button>
         </div>
       </div>
 
-      {/* KPI row */}
-      <MotionStagger className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {kpis.map((k) => (
-          <MotionItem key={k.label} whileHover={{ y: -3 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
-            <Card className="h-full">
-              <CardContent className="flex flex-col gap-2 p-4">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">{k.label}</span>
-                  {k.icon}
-                </div>
-                {analyticsLoading && !t ? (
-                  <Skeleton className="h-7 w-16" />
-                ) : (
-                  <div className="tabular text-2xl font-semibold text-foreground">{k.value}</div>
-                )}
-              </CardContent>
-            </Card>
-          </MotionItem>
-        ))}
-      </MotionStagger>
+      {/* First-run: getting-started checklist replaces the empty KPI/recent grid. */}
+      {showOnboarding ? (
+        <section className="flex flex-col gap-3">
+          <SectionHead title="Get started" />
+          <MotionStagger className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {steps.map((s) => (
+              <MotionItem key={s.title} whileHover={{ y: -3 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
+                <Card className={cn("group h-full transition-colors", s.done && "opacity-70")}>
+                  <CardContent className="flex items-start gap-3 p-4">
+                    <span
+                      className={cn(
+                        "grid h-10 w-10 shrink-0 place-items-center rounded-xl",
+                        s.done ? "bg-emerald-500/10 text-emerald-500" : "bg-secondary text-muted-foreground",
+                      )}
+                    >
+                      {s.done ? <Check className="h-5 w-5" /> : s.icon}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-semibold text-foreground">{s.title}</div>
+                        {s.done && <Badge variant="success">done</Badge>}
+                      </div>
+                      <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">{s.desc}</div>
+                      <Button
+                        size="sm"
+                        variant={s.done ? "ghost" : "outline"}
+                        className="mt-3"
+                        disabled={s.loading}
+                        onClick={s.action}
+                      >
+                        {s.loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {s.cta}
+                        {!s.loading && <ArrowRight className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </MotionItem>
+            ))}
+          </MotionStagger>
+        </section>
+      ) : (
+        /* Populated: KPI row */
+        <MotionStagger className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {kpis.map((k) => (
+            <MotionItem key={k.label} whileHover={{ y: -3 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
+              <Card className="h-full">
+                <CardContent className="flex flex-col gap-2 p-4">
+                  <div className="flex items-center justify-between text-muted-foreground">
+                    <span className="text-xs font-medium">{k.label}</span>
+                    {k.icon}
+                  </div>
+                  {analyticsLoading && !t ? (
+                    <Skeleton className="h-7 w-16" />
+                  ) : (
+                    <div className="tabular text-2xl font-semibold text-foreground">{k.value}</div>
+                  )}
+                </CardContent>
+              </Card>
+            </MotionItem>
+          ))}
+        </MotionStagger>
+      )}
 
       {/* Models — like a dev console's model cards */}
       {(optionsLoading || models.length > 0) && (
@@ -210,7 +334,7 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
                     <Skeleton className="h-10 w-10 rounded-xl" />
                     <div className="flex flex-1 flex-col gap-1.5">
                       <Skeleton className="h-4 w-24" />
-                      <Skeleton className="h-4 w-20 rounded-full" />
+                      <Skeleton className="h-3 w-28" />
                     </div>
                   </CardContent>
                 </Card>
@@ -220,23 +344,19 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
           <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {models.map((m) => {
               const isLocal = m.kind === "local";
+              const provider = getModelProvider(m.id, isLocal);
               return (
                 <MotionItem key={m.id} whileHover={{ y: -3 }} transition={{ type: "spring", stiffness: 400, damping: 30 }}>
                   <button type="button" onClick={() => onNavigate("/models")} className="block w-full text-left">
                     <Card className="group h-full">
                       <CardContent className="flex items-center gap-3 p-4">
-                        <span
-                          className={cn(
-                            "grid h-10 w-10 shrink-0 place-items-center rounded-xl",
-                            isLocal ? "bg-violet-500/10 text-violet-500" : "bg-brand-500/10 text-brand-500",
-                          )}
-                        >
-                          {isLocal ? <Server className="h-5 w-5" /> : <Cloud className="h-5 w-5" />}
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted/60 ring-1 ring-inset ring-border/60">
+                          {provider.logo}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-semibold text-foreground">{shortModel(m.id)}</div>
-                          <div className="mt-0.5 flex items-center gap-1.5">
-                            <StatusChip tone={isLocal ? "violet" : "blue"}>{isLocal ? "MLX · local" : "hosted"}</StatusChip>
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {provider.name} · {isLocal ? "MLX local" : "hosted"}
                           </div>
                         </div>
                         <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
@@ -336,8 +456,17 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
                   ))}
                 </ul>
               ) : recent.length === 0 ? (
-                <div className="flex h-24 items-center justify-center text-center text-xs text-muted-foreground">
-                  No calls yet — start a session to see activity.
+                <div className="flex flex-col items-center justify-center gap-3 px-3 py-7 text-center">
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-secondary text-muted-foreground">
+                    <History className="h-5 w-5" />
+                  </span>
+                  <p className="text-xs text-muted-foreground">
+                    No calls yet. Run a session, or load sample data to explore the cockpit.
+                  </p>
+                  <Button size="sm" variant="outline" disabled={seeding} onClick={loadDemoData}>
+                    {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+                    Load demo data
+                  </Button>
                 </div>
               ) : (
                 <ul className="divide-y divide-border">

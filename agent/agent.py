@@ -20,9 +20,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import traceback
 from typing import Any
 
+import httpx
 import psycopg
 from dotenv import load_dotenv
 from livekit import agents
@@ -32,6 +34,13 @@ from livekit.plugins import elevenlabs, openai
 from persistence import CallRecorder
 
 load_dotenv()
+
+# Backend bridge — forwards live turns/tools/lifecycle to POST /api/agent/ingest
+# so the cockpit's context-graph, prediction, reasoning, and tool panels light up
+# during a real voice call (parity with the in-app simulate loop). Best-effort: a
+# missing URL or a backend hiccup never disturbs the audio pipeline.
+BRIDGE_URL = (os.environ.get("BACKEND_URL") or os.environ.get("VOICEOPS_BACKEND_URL") or "").rstrip("/")
+BRIDGE_TOKEN = os.environ.get("BACKEND_INTERNAL_TOKEN")
 
 # The ElevenLabs plugin reads ELEVEN_API_KEY; accept the project's ELEVENLABS_API_KEY too.
 if os.environ.get("ELEVENLABS_API_KEY") and not os.environ.get("ELEVEN_API_KEY"):
@@ -44,11 +53,14 @@ DB_URL = (
 )
 
 INSTRUCTIONS = """You are VoiceOps, an autonomous healthcare administrative voice agent calling a
-payer's provider-services line on behalf of a clinic. Authenticate, then use your tools to verify
-member eligibility, claim status, or prior-auth status. Speak only facts returned by tools — never
-invent coverage, claim, or auth details. Be concise and professional. If the payer requires a
-peer-to-peer review or you cannot resolve the issue autonomously, say so and escalate. Capture the
-required fields, then summarize the outcome and end the call politely."""
+payer's provider-services line on behalf of a clinic. Authenticate, then verify member eligibility,
+claim status, or prior-auth status. Speak only facts that are either returned by a tool or supplied
+in a VERIFIED RECORDS grounding block — both come from the payer's system of record. Never invent
+coverage, claim, or auth details. When the grounding already contains the answer to what the rep
+asks, you may state it directly without re-running a lookup; still call tools to take an action or to
+write a result back. Be concise and professional. If the payer requires a peer-to-peer review or you
+cannot resolve the issue autonomously, say so and escalate. Capture the required fields, then
+summarize the outcome and end the call politely."""
 
 
 def _debug(msg: str) -> None:
@@ -56,6 +68,87 @@ def _debug(msg: str) -> None:
     # process logs do not reliably surface through `python agent.py dev`.
     with open("/tmp/voiceops-agent-debug.log", "a", encoding="utf-8") as f:
         f.write(f"{msg}\n")
+
+
+class Bridge:
+    """Forwards live-call events to the backend SSE ingest endpoint. Fire-and-
+    forget: every send is wrapped so a backend outage can't stall the audio loop,
+    and the whole thing no-ops when BACKEND_URL isn't configured."""
+
+    def __init__(self, run_id: str, scenario_id: str | None, model: str) -> None:
+        self.run_id = run_id
+        self.scenario_id = scenario_id
+        self.model = model
+        self.enabled = bool(BRIDGE_URL)
+        self._client: httpx.AsyncClient | None = None
+
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+        return self._client
+
+    def send(self, event: dict[str, Any]) -> None:
+        """Schedule a forward without awaiting it (safe to call from sync code)."""
+        if not self.enabled:
+            return
+        asyncio.create_task(self._post(event))
+
+    async def _post(self, event: dict[str, Any]) -> None:
+        headers = {"content-type": "application/json"}
+        if BRIDGE_TOKEN:
+            headers["x-internal-token"] = BRIDGE_TOKEN
+        try:
+            await self._http().post(
+                f"{BRIDGE_URL}/api/agent/ingest",
+                headers=headers,
+                json={
+                    "runId": self.run_id,
+                    "scenarioId": self.scenario_id,
+                    "model": self.model,
+                    "event": event,
+                },
+            )
+        except Exception:  # noqa: BLE001 - bridge is best-effort
+            _debug(f"bridge post failed: {event.get('kind')}")
+
+    async def fetch_context(self, text: str) -> str:
+        """Pull anticipatory grounding for the upcoming reply: the verified records
+        the call has surfaced PLUS the records the predictor expects the rep to ask
+        about next, folded into one block. So the context graph + anticipation
+        actually steer the live answer (not just the cockpit panels). Best-effort
+        and short-timeout — a backend hiccup just means an ungrounded turn, never a
+        stalled audio loop. Returns "" when disabled/unavailable."""
+        if not self.enabled:
+            return ""
+        headers = {"content-type": "application/json"}
+        if BRIDGE_TOKEN:
+            headers["x-internal-token"] = BRIDGE_TOKEN
+        try:
+            resp = await self._http().post(
+                f"{BRIDGE_URL}/api/agent/context",
+                headers=headers,
+                json={
+                    "runId": self.run_id,
+                    "scenarioId": self.scenario_id,
+                    "model": self.model,
+                    "text": text or "",
+                },
+                timeout=httpx.Timeout(2.5),
+            )
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            return data.get("context") or "" if isinstance(data, dict) else ""
+        except Exception:  # noqa: BLE001 - grounding is best-effort
+            _debug("bridge context fetch failed")
+            return ""
+
+    async def aclose(self) -> None:
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _query(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
@@ -69,13 +162,52 @@ def _query(sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
 
 
 class PayerOpsAgent(Agent):
-    def __init__(self, recorder: CallRecorder, instructions: str) -> None:
+    def __init__(self, recorder: CallRecorder, instructions: str, bridge: Bridge) -> None:
         super().__init__(instructions=instructions)
         self._rec = recorder
+        self._bridge = bridge
 
-    async def _record(self, tool: str, result: str, *, phi: bool, key: str | None = None) -> None:
+    async def on_user_turn_completed(self, turn_ctx: Any, new_message: Any) -> None:
+        """LiveKit RAG hook: fires after the rep finishes speaking, before the LLM
+        replies. We fold the context graph's grounding — verified records the call
+        has surfaced PLUS the records anticipation expects the rep to ask about
+        next — into the turn so the agent answers from on-file facts (and already
+        holds the likely-next record, no extra lookup). Best-effort: any failure
+        leaves the turn ungrounded rather than disturbing the audio pipeline."""
+        try:
+            user_text = getattr(new_message, "text_content", None) or ""
+            context = await self._bridge.fetch_context(user_text)
+            if not context:
+                return
+            turn_ctx.add_message(
+                role="system",
+                content=(
+                    "VERIFIED RECORDS from the payer's system of record (read-only "
+                    "grounding — speak only these facts; still call tools to act and "
+                    "to write results back):\n" + context
+                ),
+            )
+            _debug(f"grounding injected ({len(context)} chars) room={self._bridge.run_id}")
+        except Exception:  # noqa: BLE001 - never let grounding disturb the reply
+            _debug("grounding inject failed")
+
+    async def _record(
+        self, tool: str, result: str, *, phi: bool, key: str | None = None, args: dict[str, Any] | None = None
+    ) -> None:
         scope = f"member:***{key[-4:]}" if (phi and key) else ("handoff:packet" if phi else None)
+        started = time.time()
         await asyncio.to_thread(self._rec.record_tool, tool, f"{tool} → {result[:80]}", phi, scope)
+        # Mirror the tool call into the cockpit's live event stream.
+        self._bridge.send({
+            "kind": "tool",
+            "tool": tool,
+            "args": args or ({"member_id": key} if key else {}),
+            "result": result,
+            "status": "ok",
+            "latencyMs": round((time.time() - started) * 1000),
+            "phi": phi,
+            "phiScope": scope,
+        })
 
     @function_tool()
     async def lookup_patient(self, context: RunContext, member_id: str) -> str:
@@ -120,7 +252,7 @@ class PayerOpsAgent(Agent):
             result = f"Claim {c['claim_id']}: {c['status']}, CPT {c['cpt']}, billed ${c['billed_amount']}."
             if c["status"] == "DENIED":
                 result += f" {c['carc_code']}: {c['denial_reason']} Resubmission: {c['resubmission_path']}."
-        await self._record("verify_claim", result, phi=True, key=claim_id)
+        await self._record("verify_claim", result, phi=True, key=claim_id, args={"claim_id": claim_id})
         return result
 
     @function_tool()
@@ -128,7 +260,7 @@ class PayerOpsAgent(Agent):
         """Route to a human specialist when the call cannot be completed autonomously."""
         self._rec.escalated = True
         result = f"Escalation packet created and routed to clinical review ({reason})."
-        await self._record("escalate", result, phi=True)
+        await self._record("escalate", result, phi=True, args={"reason": reason})
         return result
 
 
@@ -180,6 +312,11 @@ async def _entrypoint(ctx: agents.JobContext) -> None:
     await asyncio.to_thread(recorder.start)
     _debug(f"recorder started room={ctx.room.name}")
 
+    # Live cockpit bridge: forwards turns/tools/lifecycle to the backend so the
+    # graph / prediction / reasoning panels track the call in real time.
+    bridge = Bridge(ctx.room.name, cfg.get("scenarioId") or recorder.scenario_id, model)
+    bridge.send({"kind": "hello"})  # opens the run + emits session/start events
+
     has_eleven = bool(os.environ.get("ELEVEN_API_KEY") or os.environ.get("ELEVENLABS_API_KEY"))
     _debug(f"session build start room={ctx.room.name} has_eleven={has_eleven}")
 
@@ -206,13 +343,18 @@ async def _entrypoint(ctx: agents.JobContext) -> None:
             return
         speaker = "agent" if getattr(item, "role", "") == "assistant" else "payer"
         asyncio.create_task(asyncio.to_thread(recorder.record_turn, speaker, text))
+        bridge.send({"kind": "turn", "speaker": speaker, "text": text})
 
     async def _finalize() -> None:
         await asyncio.to_thread(recorder.finalize)
+        # Await the final forward (don't schedule it) so it lands before teardown.
+        if bridge.enabled:
+            await bridge._post({"kind": "done", "outcome": "escalated" if recorder.escalated else "completed"})
+        await bridge.aclose()
 
     ctx.add_shutdown_callback(_finalize)
 
-    await session.start(agent=PayerOpsAgent(recorder, instructions), room=ctx.room)
+    await session.start(agent=PayerOpsAgent(recorder, instructions, bridge), room=ctx.room)
     _debug(f"session started room={ctx.room.name}")
     await asyncio.sleep(0.5)
     session.say(

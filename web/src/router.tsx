@@ -6,6 +6,7 @@ import {
   createRouter,
   lazyRouteComponent,
   Outlet,
+  redirect,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
@@ -17,9 +18,10 @@ import { ScenariosView } from "@/components/ScenariosView";
 import { VoicesView } from "@/components/VoicesView";
 import { ModelsView } from "@/components/ModelsView";
 import { LogsView } from "@/components/LogsView";
+import { TeamView } from "@/components/TeamView";
 import { AuthScreen } from "@/components/AuthScreen";
 import { CommandPalette } from "@/components/CommandPalette";
-import { SettingsDialog } from "@/components/SettingsDialog";
+import { SettingsView } from "@/components/SettingsView";
 import {
   SidebarInset,
   SidebarProvider,
@@ -34,7 +36,8 @@ import { useSession } from "@/lib/auth/client";
 // Tabs are real routes; the Home overview is the landing page at "/".
 const PATH_BY_TAB: Record<TabId, string> = {
   home: "/",
-  studio: "/studio",
+  simulate: "/simulate",
+  live: "/live",
   scenarios: "/scenarios",
   voices: "/voices",
   models: "/models",
@@ -42,11 +45,14 @@ const PATH_BY_TAB: Record<TabId, string> = {
   calls: "/calls",
   logs: "/logs",
   integrations: "/integrations",
+  team: "/team",
+  settings: "/settings",
 };
 
 function tabFromPath(pathname: string): TabId {
-  // /playground and /simulator are legacy aliases of the merged Studio.
-  if (pathname.startsWith("/studio") || pathname.startsWith("/playground") || pathname.startsWith("/simulator")) return "studio";
+  if (pathname.startsWith("/live")) return "live";
+  // /studio, /playground, /simulator are legacy routes that redirect to /simulate.
+  if (pathname.startsWith("/simulate") || pathname.startsWith("/studio") || pathname.startsWith("/playground") || pathname.startsWith("/simulator")) return "simulate";
   if (pathname.startsWith("/scenarios")) return "scenarios";
   if (pathname.startsWith("/voices")) return "voices";
   if (pathname.startsWith("/models")) return "models";
@@ -54,6 +60,8 @@ function tabFromPath(pathname: string): TabId {
   if (pathname.startsWith("/calls")) return "calls";
   if (pathname.startsWith("/logs")) return "logs";
   if (pathname.startsWith("/integrations")) return "integrations";
+  if (pathname.startsWith("/team")) return "team";
+  if (pathname.startsWith("/settings")) return "settings";
   return "home";
 }
 
@@ -84,13 +92,14 @@ function RootShell() {
 
   const { data: session, isPending } = useSession();
 
-  const tailnetDemo =
-    typeof window !== "undefined" && window.location.hostname.endsWith(".ts.net");
+  // The only auth bypass is the explicit screenshot-harness flag (never set in
+  // dev/prod). Real auth is always enforced otherwise — no implicit tailnet
+  // auto-login, so sign-out returns to the gate and only provisioned accounts in.
   const previewUser = { name: "Preview", email: "preview@voiceops.local" };
-  const user =
-    session?.user ?? (tailnetDemo || PREVIEW_BYPASS ? previewUser : null);
+  const user = session?.user ?? (PREVIEW_BYPASS ? previewUser : null);
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
 
-  if (isPending && !tailnetDemo && !PREVIEW_BYPASS) {
+  if (isPending && !PREVIEW_BYPASS) {
     return (
       <div role="status" aria-live="polite" className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -110,6 +119,7 @@ function RootShell() {
         onTab={(t) => navigate({ to: PATH_BY_TAB[t] })}
         userName={user.name ?? undefined}
         userEmail={user.email}
+        isAdmin={isAdmin}
       />
       <SidebarInset>
         {/* No top bar — search lives in the sidebar (OpenAI-style). A floating
@@ -117,8 +127,10 @@ function RootShell() {
         <SidebarTrigger className="fixed left-3 top-3 z-30 h-9 w-9 rounded-lg border border-border bg-background/80 backdrop-blur md:hidden" />
 
         {/* Single gentle fade: the outgoing page is removed and the incoming one
-            fades up (keyed remount) — no overlap/ghosting, no loader flash. */}
-        <div className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+            fades up (keyed remount) — no overlap/ghosting, no loader flash.
+            Extra top padding below `md` reserves a strip for the floating mobile
+            trigger so it never overlaps a page header. */}
+        <div className="mx-auto w-full min-w-0 max-w-[1500px] flex-1 px-4 pb-6 pt-16 sm:px-6 md:pt-6 lg:px-8">
           <MotionView key={tab}>
             <Outlet />
           </MotionView>
@@ -126,8 +138,7 @@ function RootShell() {
       </SidebarInset>
 
       {/* Global overlays driven by the settings store. */}
-      <CommandPalette navigate={(path) => navigate({ to: path })} />
-      <SettingsDialog user={user} />
+      <CommandPalette navigate={(path) => navigate({ to: path })} isAdmin={isAdmin} />
       <Toaster />
     </SidebarProvider>
   );
@@ -163,16 +174,24 @@ function ModelsRoute() {
 // Home is the eager landing. Playground (LiveKit), Analytics (recharts), and
 // Call History are code-split so their bundles load only on demand.
 const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomeRoute });
-// The merged Studio (live voice + simulate). /playground and /simulator are
-// legacy aliases so existing links/shortcuts keep working.
-const studioLazy = lazyRouteComponent(() => import("@/components/StudioView"), "StudioView");
-// `?runId=` opens a stored/live session for replay (from Call History).
+// Simulation (autonomous agent↔payer LLM) and Live (agent-led role-play: you
+// play the payer rep, by text or voice) are now distinct pages. Both mount the
+// shared Studio engine via a thin mode-locked wrapper. `?runId=` opens a stored
+// session for replay (from Call History).
+const simulateLazy = lazyRouteComponent(() => import("@/components/StudioView"), "SimulateView");
+const liveLazy = lazyRouteComponent(() => import("@/components/StudioView"), "LiveView");
 const validateStudioSearch = (search: Record<string, unknown>): { runId?: string } => ({
   runId: typeof search.runId === "string" ? search.runId : undefined,
 });
-const studioRoute = createRoute({ getParentRoute: () => rootRoute, path: "/studio", component: studioLazy, validateSearch: validateStudioSearch });
-const playgroundRoute = createRoute({ getParentRoute: () => rootRoute, path: "/playground", component: studioLazy });
-const simulatorRoute = createRoute({ getParentRoute: () => rootRoute, path: "/simulator", component: studioLazy });
+const simulateRoute = createRoute({ getParentRoute: () => rootRoute, path: "/simulate", component: simulateLazy, validateSearch: validateStudioSearch });
+const liveRoute = createRoute({ getParentRoute: () => rootRoute, path: "/live", component: liveLazy, validateSearch: validateStudioSearch });
+// Legacy routes redirect to Simulation, preserving any ?runId= deep link.
+const legacyRedirect = (search: { runId?: string }) => {
+  throw redirect({ to: "/simulate", search });
+};
+const studioRoute = createRoute({ getParentRoute: () => rootRoute, path: "/studio", validateSearch: validateStudioSearch, beforeLoad: ({ search }) => legacyRedirect(search) });
+const playgroundRoute = createRoute({ getParentRoute: () => rootRoute, path: "/playground", beforeLoad: () => legacyRedirect({}) });
+const simulatorRoute = createRoute({ getParentRoute: () => rootRoute, path: "/simulator", beforeLoad: () => legacyRedirect({}) });
 const scenariosRoute = createRoute({ getParentRoute: () => rootRoute, path: "/scenarios", component: ScenariosRoute });
 const voicesRoute = createRoute({ getParentRoute: () => rootRoute, path: "/voices", component: VoicesRoute });
 const modelsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/models", component: ModelsRoute });
@@ -188,9 +207,13 @@ const callsRoute = createRoute({
   component: lazyRouteComponent(() => import("@/components/CallHistoryView"), "CallHistoryView"),
 });
 const integrationsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/integrations", component: IntegrationsRoute });
+const teamRoute = createRoute({ getParentRoute: () => rootRoute, path: "/team", component: TeamView });
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsView });
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  simulateRoute,
+  liveRoute,
   studioRoute,
   playgroundRoute,
   simulatorRoute,
@@ -201,6 +224,8 @@ const routeTree = rootRoute.addChildren([
   callsRoute,
   logsRoute,
   integrationsRoute,
+  teamRoute,
+  settingsRoute,
 ]);
 
 function RoutePending() {

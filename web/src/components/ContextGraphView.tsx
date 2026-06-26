@@ -33,6 +33,7 @@ const TYPE_COLOR: Record<string, string> = {
   auth: "#8b5cf6",
   provider: "#64748b",
   payer: "#3b82f6",
+  note: "#ec4899", // recorded on the call (conversational memory)
 };
 
 const W = 460;
