@@ -22,8 +22,11 @@ async def test_demo_is_deterministic():
     assert a.demo is True
 
 
-async def test_route_falls_back_to_demo_when_unconfigured():
+async def test_route_falls_back_to_demo_when_unconfigured(monkeypatch):
     # An OpenRouter model with no API key configured should fall back to demo.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "openrouter_api_key", "", raising=False)
     result = await route_chat(_req("anthropic/claude-sonnet-4.6"))
     assert result.routed_to == "demo"
     assert result.fell_back is True
