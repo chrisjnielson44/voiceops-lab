@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from app.agent import run_store
+from app.agent.notes import extract_notes
 from app.agent.prediction import (
     CONFIDENCE_PREFETCH,
     PREFETCH_TOP,
@@ -140,6 +141,26 @@ async def run_orchestrator(run: RunState) -> None:
     def push_metrics() -> None:
         metrics.avg_latency_ms = round(sum(latencies) / len(latencies)) if latencies else 0
         emit(run, ev.metrics_event(metrics))
+
+    noted_keys: set[str] = set()
+
+    def capture_notes(text: str, speaker: str) -> None:
+        """Auto-record conversational facts (rep name, reference numbers) the turn
+        surfaces into the live memory graph — so it captures what's SAID even when
+        the model doesn't call note_fact. Deduped; shows on the next graph emit."""
+        if run.graph is None:
+            return
+        for label, value in extract_notes(text, speaker, scenario):
+            key = f"{label}={value}".lower()
+            if key in noted_keys:
+                continue
+            noted_keys.add(key)
+            try:
+                nid = run.graph.note(label, value)
+                if nid:
+                    run.discovered.add(nid)
+            except Exception:  # noqa: BLE001 - never block the call on a note
+                pass
 
     def phase_from_prediction(p: PredictionSnapshot | None) -> int:
         if not p:
@@ -572,6 +593,7 @@ async def run_orchestrator(run: RunState) -> None:
                 anticipated=len(warmed_intents_now()) or None,
             )
             transcript_text += f"\nAGENT: {text}"
+            capture_notes(text, "agent")
             snippet = text[:72] + ("…" if len(text) > 72 else "")
             push_audit(
                 type="model.invoke",
@@ -616,6 +638,7 @@ async def run_orchestrator(run: RunState) -> None:
             push_turn("payer", payer_text, payer_latency)
             had_payer_exchange = True
             transcript_text += f"\nPAYER: {payer_text}"
+            capture_notes(payer_text, "payer")
             agent_msgs.append({"role": "user", "content": f"PAYER said: {payer_text}"})
 
             # ---- ANTICIPATORY PREDICTION + PREFETCH (off the critical path) ----

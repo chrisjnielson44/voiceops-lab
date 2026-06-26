@@ -60,6 +60,25 @@ async def require_user(
     return (x_voiceops_user or "").strip() or settings.demo_user_id
 
 
+async def require_user_scope(
+    request: Request,
+    x_voiceops_user: str | None = Header(default=None),
+) -> tuple[str, bool]:
+    """Return ``(user_id, is_admin)`` for data scoping.
+
+    Admins get an org-wide view; everyone else is scoped to their own runs.
+    Enforces auth when configured. In dev/test/preview (REQUIRE_AUTH off) the
+    fallback user is treated as admin so local tooling keeps seeing all calls.
+    """
+    user = await _session_user(request)
+    if user and user.get("id"):
+        return str(user["id"]), user.get("role") == "admin"
+    if settings.require_auth:
+        raise HTTPException(status_code=401, detail="authentication required")
+    uid = (x_voiceops_user or "").strip() or settings.demo_user_id
+    return uid, True
+
+
 async def require_admin(request: Request) -> str:
     """Like `require_user`, but the session user's role must be `admin`. Falls
     back to the demo user in dev/test (when REQUIRE_AUTH is off) so local tooling

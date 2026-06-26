@@ -14,12 +14,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import query, query_one
-from app.routers._deps import require_internal, require_user
+from app.routers._deps import require_internal, require_user_scope
 
 router = APIRouter(
     prefix="/api",
     tags=["calls"],
-    dependencies=[Depends(require_internal), Depends(require_user)],
+    dependencies=[Depends(require_internal)],
 )
 
 
@@ -64,19 +64,35 @@ def _run_summary(r: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/calls")
-async def list_calls(limit: int = 50, offset: int = 0):
+async def list_calls(
+    limit: int = 50,
+    offset: int = 0,
+    scope: tuple[str, bool] = Depends(require_user_scope),
+):
+    user_id, is_admin = scope
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
+    # Admins see the whole org; everyone else only their own runs.
+    params: list = []
+    where = ""
+    if not is_admin:
+        params.append(user_id)
+        where = f"WHERE r.user_id = ${len(params)}"
+    params.append(limit)
+    limit_idx = len(params)
+    params.append(offset)
+    offset_idx = len(params)
     try:
         rows = await query(
-            """SELECT r.id, r.scenario_id, r.payer, r.model, r.status, r.outcome,
+            f"""SELECT r.id, r.scenario_id, r.payer, r.model, r.status, r.outcome,
                       r.completion_prob, r.escalation_risk, r.started_at, r.ended_at,
                       extract(epoch from (r.ended_at - r.started_at)) AS duration_sec,
                       (SELECT count(*) FROM call_events e WHERE e.run_id = r.id) AS event_count
                FROM call_runs r
+               {where}
                ORDER BY r.started_at DESC NULLS LAST
-               LIMIT $1 OFFSET $2""",
-            [limit, offset],
+               LIMIT ${limit_idx} OFFSET ${offset_idx}""",
+            params,
         )
         calls = [_run_summary(r) for r in rows]
         return {"hasData": len(calls) > 0, "calls": calls}
@@ -85,14 +101,21 @@ async def list_calls(limit: int = 50, offset: int = 0):
 
 
 @router.get("/calls/{run_id}")
-async def get_call(run_id: str):
+async def get_call(run_id: str, scope: tuple[str, bool] = Depends(require_user_scope)):
+    user_id, is_admin = scope
+    params: list = [run_id]
+    where = "WHERE id = $1"
+    if not is_admin:
+        params.append(user_id)
+        where += f" AND user_id = ${len(params)}"
     run = await query_one(
-        """SELECT id, scenario_id, payer, model, status, outcome,
+        f"""SELECT id, scenario_id, payer, model, status, outcome,
                   completion_prob, escalation_risk, started_at, ended_at,
                   extract(epoch from (ended_at - started_at)) AS duration_sec
-           FROM call_runs WHERE id = $1""",
-        [run_id],
+           FROM call_runs {where}""",
+        params,
     )
+    # 404 (not 403) when a run exists but isn't the caller's — don't leak existence.
     if not run:
         raise HTTPException(status_code=404, detail="call run not found")
 

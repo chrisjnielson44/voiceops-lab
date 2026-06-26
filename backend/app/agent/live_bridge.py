@@ -36,6 +36,7 @@ import json
 from typing import Any
 
 from app.agent import run_store
+from app.agent.notes import extract_notes
 from app.agent.prediction import normalize_prediction_set, stats_summary
 from app.agent.reasoning import narrate_graph, narrate_predictions
 from app.agent.run_store import RunState, create_run, emit, get_run
@@ -84,6 +85,7 @@ class LiveBridge:
         self.preloaded_intents: set[str] = set()  # narrate which candidates were pre-loaded
         self.last_grounded: int | None = None     # records fed into the next agent turn
         self.last_anticipated: int | None = None   # of those, pre-loaded by anticipation
+        self.noted_keys: set[str] = set()          # dedupe auto-captured conversational notes
         self.fast_model = (settings.local_llm_fast_model or "").strip() or run.model or local_model_id()
         self._lock = asyncio.Lock()
 
@@ -392,6 +394,23 @@ class LiveBridge:
             emit(self.run, ev.status_event("active", 1, self._now()))
         await self._ensure_graph()
 
+    def _capture_notes(self, text: str, speaker: str) -> None:
+        """Auto-record conversational facts (rep name, reference numbers) into the
+        live memory graph, deduped — parity with the simulate orchestrator."""
+        if self.run.graph is None:
+            return
+        for label, value in extract_notes(text, speaker, self.scenario):
+            key = f"{label}={value}".lower()
+            if key in self.noted_keys:
+                continue
+            self.noted_keys.add(key)
+            try:
+                nid = self.run.graph.note(label, value)
+                if nid:
+                    self.run.discovered.add(nid)
+            except Exception:  # noqa: BLE001
+                pass
+
     async def on_turn(self, speaker: str, text: str, latency_ms: int | None = None) -> None:
         text = (text or "").strip()
         if not text:
@@ -405,6 +424,7 @@ class LiveBridge:
                 self._emit_reasoning(subgraph)
                 self._push_turn("agent", text, latency_ms, grounded=self.last_grounded, anticipated=self.last_anticipated)
                 self.transcript_text += f"\nAGENT: {text}"
+                self._capture_notes(text, "agent")
                 snippet = text[:72] + ("…" if len(text) > 72 else "")
                 self._push_audit(
                     type="model.invoke",
@@ -418,6 +438,7 @@ class LiveBridge:
             else:
                 self._push_turn("payer", text, latency_ms)
                 self.transcript_text += f"\nPAYER: {text}"
+                self._capture_notes(text, "payer")
                 # Surface the payer's mention into the graph before forecasting.
                 self._retrieve_context()
                 emit(self.run, ev.status_event("active", self._phase(), self._now()))

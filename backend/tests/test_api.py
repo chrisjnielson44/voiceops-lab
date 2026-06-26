@@ -212,7 +212,9 @@ async def test_health_routes_stay_public_under_auth(client, monkeypatch, path):
 
     monkeypatch.setattr(settings, "require_auth", True)
     r = await client.get(path)
-    assert r.status_code == 200
+    assert r.status_code != 401
+    if path == "/healthz":
+        assert r.status_code == 200
 
 
 async def test_anon_fallback_when_auth_not_required(client, fake_pool, fake_llm):

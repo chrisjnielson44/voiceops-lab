@@ -315,9 +315,12 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   };
 
   const newSession = () => {
+    const ending = runId; // capture before the store clears it
     endSession();
     setLiveError(null);
-    openedRef.current = null;
+    // Mark the just-ended run as already-handled so the URL→session effect can't
+    // re-open it from a still-present ?runId before the navigate clears the param.
+    if (ending) openedRef.current = ending;
     navigate({ to: routePath, search: { runId: undefined }, replace: true });
   };
 

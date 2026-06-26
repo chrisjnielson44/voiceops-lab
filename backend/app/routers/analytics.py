@@ -8,52 +8,82 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.db import query, query_one
-from app.routers._deps import require_internal, require_user
+from app.routers._deps import require_internal, require_user_scope
 
 router = APIRouter(
     prefix="/api",
     tags=["analytics"],
-    dependencies=[Depends(require_internal), Depends(require_user)],
+    dependencies=[Depends(require_internal)],
 )
 
 
 @router.get("/analytics")
-async def analytics():
+async def analytics(scope: tuple[str, bool] = Depends(require_user_scope)):
+    user_id, is_admin = scope
+    # Admins aggregate the whole org; others only their own runs. Each query
+    # below references $1 exactly once iff scoped, so the param list stays
+    # consistent with asyncpg's strict arg-count check.
+    if is_admin:
+        params: list = []
+        runs_scope = ""  # AND-able predicate on call_runs
+        events_scope = ""  # AND-able predicate on call_events
+    else:
+        params = [user_id]
+        runs_scope = "user_id = $1"
+        events_scope = (
+            "EXISTS (SELECT 1 FROM call_runs r WHERE r.id = call_events.run_id AND r.user_id = $1)"
+        )
+
+    def _where(*preds: str) -> str:
+        clauses = [p for p in preds if p]
+        return ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    phi_where = _where("type='phi.access'", events_scope)
+    tools_where = _where("type='tool.call'", events_scope)
+
     try:
         totals = await query_one(
-            """SELECT count(*) AS total,
+            f"""SELECT count(*) AS total,
                       count(*) FILTER (WHERE outcome='completed') AS completed,
                       count(*) FILTER (WHERE outcome='escalated') AS escalated,
                       avg(extract(epoch from (ended_at - started_at))) FILTER (WHERE ended_at IS NOT NULL) AS aht_sec,
                       avg(completion_prob) AS avg_completion,
                       avg(escalation_risk) AS avg_escalation
-               FROM call_runs"""
+               FROM call_runs {_where(runs_scope)}""",
+            params,
         )
-        phi = await query_one("SELECT count(*) AS phi FROM call_events WHERE type='phi.access'")
+        phi = await query_one(
+            f"SELECT count(*) AS phi FROM call_events {phi_where}",
+            params,
+        )
         tools = await query_one(
-            """SELECT count(*) AS calls,
+            f"""SELECT count(*) AS calls,
                       count(*) FILTER (WHERE redaction IS NULL) AS errors
-               FROM call_events WHERE type='tool.call'"""
+               FROM call_events {tools_where}""",
+            params,
         )
         payers = await query(
-            """SELECT payer,
+            f"""SELECT payer,
                       count(*) AS calls,
                       count(*) FILTER (WHERE outcome='completed')::float / greatest(count(*),1) AS completion,
                       count(*) FILTER (WHERE outcome='escalated')::float / greatest(count(*),1) AS escalation,
                       avg(extract(epoch from (ended_at - started_at))) FILTER (WHERE ended_at IS NOT NULL) AS aht
-               FROM call_runs GROUP BY payer ORDER BY calls DESC"""
+               FROM call_runs {_where(runs_scope)} GROUP BY payer ORDER BY calls DESC""",
+            params,
         )
         models = await query(
-            """SELECT model,
+            f"""SELECT model,
                       count(*) AS calls,
                       count(*) FILTER (WHERE outcome='completed')::float / greatest(count(*),1) AS completion,
                       count(*) FILTER (WHERE outcome='escalated')::float / greatest(count(*),1) AS escalation,
                       avg(extract(epoch from (ended_at - started_at))) FILTER (WHERE ended_at IS NOT NULL) AS aht
-               FROM call_runs WHERE model IS NOT NULL GROUP BY model ORDER BY calls DESC"""
+               FROM call_runs {_where('model IS NOT NULL', runs_scope)} GROUP BY model ORDER BY calls DESC""",
+            params,
         )
         volume = await query(
-            """SELECT extract(hour from started_at)::int AS hour, count(*) AS calls
-               FROM call_runs WHERE started_at IS NOT NULL GROUP BY 1 ORDER BY 1"""
+            f"""SELECT extract(hour from started_at)::int AS hour, count(*) AS calls
+               FROM call_runs {_where('started_at IS NOT NULL', runs_scope)} GROUP BY 1 ORDER BY 1""",
+            params,
         )
 
         total = int((totals or {}).get("total") or 0)
