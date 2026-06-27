@@ -133,7 +133,7 @@ function RootShell() {
             fades up (keyed remount) — no overlap/ghosting, no loader flash.
             Extra top padding below `md` reserves a strip for the floating mobile
             trigger so it never overlaps a page header. */}
-        <div className="mx-auto w-full min-w-0 max-w-[1500px] flex-1 px-4 pb-6 pt-16 sm:px-6 md:pt-6 lg:px-8">
+        <div className="mx-auto w-full min-w-0 max-w-[1500px] flex-1 px-4 pb-6 pt-16 sm:px-6 md:pt-10 lg:px-8">
           <MotionView key={tab}>
             <Outlet />
           </MotionView>

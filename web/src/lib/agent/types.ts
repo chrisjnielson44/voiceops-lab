@@ -13,6 +13,8 @@ export interface LiveTurn {
   grounded?: number | null;
   /** Of those, how many were pre-loaded by anticipation. */
   anticipated?: number | null;
+  /** True while this same-id turn is still streaming from the model. */
+  streaming?: boolean;
 }
 
 export interface LiveTool {

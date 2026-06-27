@@ -26,6 +26,9 @@ class LiveTurn(CamelModel):
     # ask). Surfaced as chips on the agent turn. None on payer/ungrounded turns.
     grounded: int | None = None
     anticipated: int | None = None
+    # True while the spoken text is still arriving from the model stream. The
+    # final same-id turn replaces this partial frame with streaming=false.
+    streaming: bool = False
 
 
 class LiveTool(CamelModel):

@@ -241,6 +241,55 @@ def extract_json(text: str) -> Any | None:
     return None
 
 
+def extract_speak_text_fragment(content: str) -> tuple[str, bool] | None:
+    """Read the current {"action":"speak","text":"..."} text while JSON streams.
+
+    The full action is only valid JSON after the model finishes, but the UI can
+    safely render the `text` field as soon as that string starts arriving. Returns
+    (text_so_far, complete_string).
+    """
+    if not re.search(r'"action"\s*:\s*"speak"', content):
+        return None
+    match = re.search(r'"text"\s*:\s*"', content)
+    if not match:
+        return None
+
+    out: list[str] = []
+    i = match.end()
+    escape = False
+    while i < len(content):
+        ch = content[i]
+        if escape:
+            if ch == "n":
+                out.append("\n")
+            elif ch == "r":
+                out.append("\r")
+            elif ch == "t":
+                out.append("\t")
+            elif ch == "b":
+                out.append("\b")
+            elif ch == "f":
+                out.append("\f")
+            elif ch == "u":
+                raw = content[i + 1 : i + 5]
+                if len(raw) < 4 or not re.fullmatch(r"[0-9a-fA-F]{4}", raw):
+                    break
+                out.append(chr(int(raw, 16)))
+                i += 4
+            else:
+                out.append(ch)
+            escape = False
+        elif ch == "\\":
+            escape = True
+        elif ch == '"':
+            return "".join(out), True
+        else:
+            out.append(ch)
+        i += 1
+
+    return ("".join(out), False) if out else None
+
+
 async def chat_json(
     messages: list[LLMMessage],
     *,
