@@ -16,6 +16,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Sun,
   User as UserIcon,
@@ -63,6 +64,7 @@ export type TabId =
   | "analytics"
   | "calls"
   | "logs"
+  | "audit"
   | "integrations"
   | "team"
   | "settings";
@@ -84,7 +86,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "models", label: "Models", icon: <Boxes className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "calls", label: "Call History", icon: <History className="h-4 w-4" /> },
-  { id: "logs", label: "Logs & Audit", icon: <ScrollText className="h-4 w-4" /> },
+  { id: "logs", label: "Logs", icon: <ScrollText className="h-4 w-4" /> },
+  { id: "audit", label: "Audit", icon: <ShieldCheck className="h-4 w-4" /> },
   { id: "integrations", label: "Integrations", icon: <Plug className="h-4 w-4" /> },
   // Admin-only — filtered out for non-admins in the render below.
   { id: "team", label: "Team", icon: <Users className="h-4 w-4" />, adminOnly: true },

@@ -64,12 +64,38 @@ def agent_system_prompt(scenario: Scenario) -> str:
         if scenario.claim
         else ""
     )
+    is_complex = scenario.category in ("claim-status", "prior-auth") or scenario.difficulty == "complex"
     if scenario.category == "claim-status":
         step2 = f'{{"action":"tool","tool":"verify_claim","args":{{"claim_id":"{scenario.claim.id if scenario.claim else ""}"}}}}'
     elif scenario.category == "prior-auth":
         step2 = f'{{"action":"tool","tool":"verify_eligibility","args":{{"auth_id":"{scenario.claim.id if scenario.claim else ""}"}}}}'
     else:
         step2 = f'{{"action":"tool","tool":"verify_eligibility","args":{{"member_id":"{scenario.patient.member_id}"}}}}'
+
+    # Step 1 is mandatory and tool-first. Complex/claim cases MUST start with the
+    # investigate sub-agent (it reconciles member+coverage+claim+auth in one shot);
+    # routine eligibility starts with a plain member lookup.
+    if is_complex:
+        first_step = (
+            f'{{"action":"tool","tool":"investigate","args":{{"task":"reconcile {scenario.category} for member '
+            f'{scenario.patient.member_id} end to end"}}}}  — REQUIRED FIRST ACTION: run the verification sub-agent. '
+            "It silently cross-checks the member, coverage, claim, AND prior authorization and returns risk flags. "
+            "Do this BEFORE you speak."
+        )
+    else:
+        first_step = (
+            f'{{"action":"tool","tool":"lookup_patient","args":{{"member_id":"{scenario.patient.member_id}"}}}}  '
+            "— REQUIRED FIRST ACTION: privately pull the member file before you speak."
+        )
+
+    complex_hint = ""
+    if scenario.category in ("claim-status", "prior-auth") or scenario.difficulty == "complex":
+        complex_hint = """
+
+COMPLEX CASE — RECONCILE BEFORE YOU ADVISE:
+- For a denied claim or any tangled case, call investigate FIRST (silent). It cross-checks the member, coverage, claim AND prior authorization in one step and returns risk flags — far better than a single lookup when records may disagree.
+- Let the sub-agent's flags steer the resolution: a claim denied for a "missing" authorization that is actually APPROVED now → resubmit as a corrected claim (record_status), do NOT appeal. No auth on file, or a required peer-to-peer / retro-auth appeal → escalate with the reason.
+- Only escalate when the matter genuinely cannot be resolved on this call; always capture the reason."""
 
     return f"""You are VoiceOps, an autonomous healthcare administrative voice agent. You are on a LIVE PHONE CALL with a {scenario.payer} ({scenario.payer_id}) provider-services representative, calling on behalf of {scenario.provider.name} (NPI {scenario.provider.npi}).
 
@@ -91,10 +117,10 @@ PROTOCOL — respond with EXACTLY ONE minified JSON object per turn, nothing els
 - Finish the call:  {{"action":"end","outcome":"completed"|"escalated","summary":"<one sentence>"}}
 
 REQUIRED FLOW (in order):
-1. {{"action":"tool","tool":"lookup_patient","args":{{"member_id":"{scenario.patient.member_id}"}}}}  — privately pull the member file.
+1. {first_step}
 2. {{"action":"speak","text":"..."}}  — greet the rep, identify your practice and the member, and state your purpose.
 3. {{"action":"speak","text":"..."}}  — the rep will ask you to authenticate; provide your tax ID / NPI.
-4. Cross-check with {step2} (silent), then SPEAK to ask the rep to confirm each required field. Confirm them out loud — do not assume from your prep.
+4. Cross-check with {step2} (silent) if you still need a detail the sub-agent didn't surface, then SPEAK to ask the rep to confirm each required field out loud — do not assume from your prep.
 5. Keep the back-and-forth going until the rep has confirmed every required field (or a peer-to-peer review is required).
 6. {{"action":"tool","tool":"record_status",...}} then {{"action":"tool","tool":"summarize"}}.
 7. {{"action":"end","outcome":"completed"}}  — or "escalated" if a human peer-to-peer review is required.
@@ -112,6 +138,8 @@ LIVE NOTES — build a working memory as you go:
 - When the rep gives you something worth remembering — their name, a reference/confirmation/ticket number, a verbal determination, or a callback time — jot it with note_fact (silent), e.g. {{"action":"tool","tool":"note_fact","args":{{"label":"Rep name","value":"Christopher"}}}}.
 - Your notes come back to you in your grounding on later turns, so refer to them naturally ("Thanks, Christopher", "per reference #…") instead of re-asking — and they're on the record.
 - Recording is a quick aside between spoken turns; it never replaces actually talking with the rep.
+
+{complex_hint}
 
 HARD RULES:
 - Do NOT call record_status / summarize / end until you have SPOKEN with the rep and they have verbally confirmed the required fields. A call with no spoken exchange is invalid.

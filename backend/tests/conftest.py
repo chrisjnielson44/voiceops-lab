@@ -72,7 +72,7 @@ class FakeLLM:
             {"action": "end", "outcome": "completed", "summary": "Eligibility confirmed."},
         ]
 
-    async def chat_json(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None):
+    async def chat_json(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None, name="llm.json"):
         await asyncio.sleep(0)
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
         if "provider-services representative" in system:
@@ -84,7 +84,7 @@ class FakeLLM:
             self.agent_step += 1
         return LLMJsonResult(value=value, raw="{}", latency_ms=12, completion_tokens=20, reasoning="Considering the member's eligibility.")
 
-    async def chat_stream(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None, on_delta=None):
+    async def chat_stream(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None, on_delta=None, name="llm.stream"):
         # The agent turn now streams; return the next scripted decision and emit a
         # token of reasoning so the streaming reasoning path is exercised.
         await asyncio.sleep(0)
@@ -94,7 +94,7 @@ class FakeLLM:
         self.agent_step += 1
         return LLMJsonResult(value=value, raw="{}", latency_ms=12, completion_tokens=20, reasoning="Considering the next step in the call.")
 
-    async def chat(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None):
+    async def chat(self, messages, *, temperature=0.3, max_tokens=256, model=None, abort=None, name="llm.chat"):
         await asyncio.sleep(0)
         return LLMResult(text="Encounter summary: eligibility verified.", latency_ms=10, prompt_tokens=5, completion_tokens=8)
 
@@ -102,11 +102,18 @@ class FakeLLM:
 @pytest.fixture
 def fake_llm(monkeypatch):
     llm = FakeLLM()
-    from app.agent import orchestrator, tools
+    from app.agent import engine, orchestrator, tools
 
     monkeypatch.setattr(orchestrator, "chat_json", llm.chat_json)
     monkeypatch.setattr(orchestrator, "chat_stream", llm.chat_stream)
+    # The CallEngine (shared by the langgraph engine) imports the same helpers.
+    monkeypatch.setattr(engine, "chat_json", llm.chat_json)
+    monkeypatch.setattr(engine, "chat_stream", llm.chat_stream)
     monkeypatch.setattr(tools, "chat", llm.chat)
+    # The investigate sub-agent synthesizes via its own chat import.
+    from app.agent.graph import subagents
+
+    monkeypatch.setattr(subagents, "chat", llm.chat)
     return llm
 
 

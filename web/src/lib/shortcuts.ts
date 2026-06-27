@@ -20,7 +20,8 @@ export const NAV_SHORTCUTS: { key: string; path: string; label: string }[] = [
   { key: "m", path: "/models", label: "Models" },
   { key: "a", path: "/analytics", label: "Analytics" },
   { key: "c", path: "/calls", label: "Call History" },
-  { key: "l", path: "/logs", label: "Logs & Audit" },
+  { key: "l", path: "/logs", label: "Logs" },
+  { key: "u", path: "/audit", label: "Audit" },
   { key: "i", path: "/integrations", label: "Integrations" },
   { key: "t", path: "/team", label: "Team" },
 ];

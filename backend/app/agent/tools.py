@@ -39,10 +39,12 @@ TOOL_CATALOG: list[dict[str, str]] = [
     {"name": "lookup_patient", "description": "Look up a member and confirm a match before discussing PHI.", "args": "member_id (string) or name (string)"},
     {"name": "verify_eligibility", "description": "Get active coverage, plan, copays, deductible, and OOP accumulators.", "args": "member_id (string)"},
     {"name": "verify_claim", "description": "Get a claim's adjudication status, denial reason, and resubmission path.", "args": "claim_id (string)"},
+    {"name": "verify_auth", "description": "Get the prior-authorization status, determination, and any unmet clinical criteria for an auth id or a member. Use to reconcile auth-related claim denials (precert/CARC 197).", "args": "auth_id (string) or member_id (string)"},
     {"name": "record_status", "description": "Write the verified outcome/fields back to the encounter.", "args": "summary (string), fields (object)"},
     {"name": "note_fact", "description": "Jot a fact the rep gives you onto your live call notes (e.g. their name, a reference/confirmation number, a verbal determination, a callback time) so you can refer back to it later in the call and it's on the record.", "args": "label (string), value (string)"},
     {"name": "escalate", "description": "Route to a human specialist when the call cannot be completed autonomously.", "args": "reason (string)"},
     {"name": "summarize", "description": "Produce the final encounter summary from the transcript.", "args": "(none)"},
+    {"name": "investigate", "description": "Delegate a complex, multi-record check to a verification sub-agent (it gathers and cross-checks the member/coverage/claim records and returns one synthesized finding with risk flags). Use when you need an end-to-end verification rather than a single lookup.", "args": "task (string)"},
 ]
 
 
@@ -126,6 +128,26 @@ async def execute_tool(tool: str, args: dict[str, Any], ctx: ToolContext) -> Too
         )
         return ToolResult(base + detail, "warn" if c.get("status") == "DENIED" else "ok", True, c)
 
+    if tool == "verify_auth":
+        auth_id = _str(args.get("auth_id")) or ctx.auth_id
+        member_id = _str(args.get("member_id")) or ctx.member_id
+        if auth_id:
+            rows = await query("SELECT * FROM prior_auths WHERE auth_id = $1", [auth_id])
+        elif member_id:
+            rows = await query("SELECT * FROM prior_auths WHERE member_id = $1 ORDER BY auth_id", [member_id])
+        else:
+            return ToolResult("auth_id or member_id is required.", "error", False)
+        if not rows:
+            return ToolResult("No prior authorization on file for this member.", "warn", True, {"status": "NONE"})
+        a = rows[0]
+        status = _d(a.get("status"))
+        msg = f"Auth {_d(a.get('auth_id'))} (CPT {_d(a.get('cpt'))}): {status}."
+        if a.get("determination"):
+            msg += f" Determination: {_d(a.get('determination'))}."
+        if a.get("clinical_criteria_unmet"):
+            msg += f" Unmet criteria: {_d(a.get('clinical_criteria_unmet'))}."
+        return ToolResult(msg, "ok" if status == "APPROVED" else "warn", True, a)
+
     if tool == "record_status":
         summary = _str(args.get("summary")) or "verified outcome"
         return ToolResult(
@@ -156,6 +178,13 @@ async def execute_tool(tool: str, args: dict[str, Any], ctx: ToolContext) -> Too
             True,
             {"reason": reason},
         )
+
+    if tool == "investigate":
+        # Delegate to the bounded plan→gather→verify→synthesize sub-agent. Lazy
+        # import breaks the tools ⇄ subagents cycle.
+        from app.agent.graph.subagents import run_investigation
+
+        return await run_investigation(_str(args.get("task")) or "", ctx)
 
     if tool == "summarize":
         transcript = ctx.transcript or ""

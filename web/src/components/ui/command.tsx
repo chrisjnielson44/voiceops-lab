@@ -30,7 +30,7 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         showClose={false}
-        className="top-[25%] max-w-xl overflow-hidden p-0"
+        className="top-[50%] w-[calc(100%-1.5rem)] max-w-xl max-h-[80svh] overflow-hidden p-0 sm:top-[22%] sm:w-full"
       >
         <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2.5 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4">
           {children}
@@ -64,7 +64,7 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn("scroll-thin max-h-[340px] overflow-y-auto overflow-x-hidden p-2", className)}
+    className={cn("scroll-thin max-h-[65svh] overflow-y-auto overflow-x-hidden p-2 sm:max-h-[340px]", className)}
     {...props}
   />
 ));

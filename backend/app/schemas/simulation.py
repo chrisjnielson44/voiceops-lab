@@ -13,9 +13,12 @@ ToolName = Literal[
     "lookup_patient",
     "verify_eligibility",
     "verify_claim",
+    "verify_auth",
     "record_status",
+    "note_fact",
     "escalate",
     "summarize",
+    "investigate",
 ]
 ToolStatus = Literal["ok", "warn", "error"]
 # Healthcare uses these three; generic/custom domain packs may use any

@@ -41,6 +41,10 @@ class RunState:
     # the payer model. Fed by POST /api/agent/say.
     human_payer: bool = False
     payer_inbox: asyncio.Queue = field(default_factory=asyncio.Queue)
+    # Approvals for sensitive-tool interrupts (langgraph engine HITL). Fed by
+    # POST /api/agent/approve; the graph driver resumes the interrupt with the
+    # decision. Each item is {"approved": bool, "args": dict | None}.
+    approval_inbox: asyncio.Queue = field(default_factory=asyncio.Queue)
     started_at: float = field(default_factory=now_ms)
     abort: asyncio.Event = field(default_factory=asyncio.Event)
     task: asyncio.Task | None = None

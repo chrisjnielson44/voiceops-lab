@@ -3,14 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, ScrollText, ShieldAlert, Wrench } from "lucide-react";
+import { Loader2, ShieldAlert, Wrench } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AuditLedger } from "@/components/AuditLedger";
 import { titleCase } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -49,25 +47,8 @@ function fmtStarted(iso: string | null): string {
 export function LogsView() {
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Logs & Audit" />
-
-      <Tabs defaultValue="stream" className="flex flex-col gap-4">
-        <TabsList className="self-start">
-          <TabsTrigger value="stream">
-            <ScrollText className="h-4 w-4" /> Event stream
-          </TabsTrigger>
-          <TabsTrigger value="ledger">
-            <ShieldAlert className="h-4 w-4" /> Audit ledger
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="stream">
-          <EventStream />
-        </TabsContent>
-        <TabsContent value="ledger">
-          <AuditLedger />
-        </TabsContent>
-      </Tabs>
+      <PageHeader title="Logs" />
+      <EventStream />
     </div>
   );
 }

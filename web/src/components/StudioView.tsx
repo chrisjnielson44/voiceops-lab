@@ -14,14 +14,13 @@ import {
 import { ConnectionState } from "livekit-client";
 import "@livekit/components-styles";
 import {
-  Activity,
   Brain,
   Check,
-  Coins,
-  Cpu,
   History,
+  Layers,
   Lock,
-  PanelRightOpen,
+  MessageSquareText,
+  Network,
   Pause,
   PhoneOff,
   Play,
@@ -31,9 +30,9 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  TrendingUp,
   User,
   Volume2,
-  Wrench,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -51,14 +50,16 @@ import { StatusChip, type Tone } from "@/components/ui/StatusChip";
 import { PredictivePanel } from "@/components/PredictivePanel";
 import { AuditLedger } from "@/components/AuditLedger";
 import { ContextGraphView } from "@/components/ContextGraphView";
+import { PredictionTree } from "@/components/PredictionTree";
 import { StudioTranscript } from "@/components/StudioTranscript";
 import { Suggestions } from "@/components/ai/activity";
-import { StudioSidecar } from "@/components/StudioSidecar";
+import { StudioSidecar, VitalsCard } from "@/components/StudioSidecar";
 import { SimVoicePlayer } from "@/components/SimVoicePlayer";
 import { PreConfigView, type VoiceOptions, type ScenarioOpt } from "@/components/PreConfigView";
 import { RoleCard } from "@/components/RoleCard";
 import { cn } from "@/lib/cn";
-import { formatClock } from "@/lib/format";
+import { formatClock, formatPercent } from "@/lib/format";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 
 const STATUS_META: Record<CallStatus, { tone: Tone; label: string; pulse?: boolean }> = {
@@ -181,6 +182,10 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   const [drawer, setDrawer] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
   const [voiceRate, setVoiceRate] = useState(1);
+  // Mobile uses a segmented control (Chat | Insights | Audit) instead of the
+  // desktop focused-column + on-demand Insights drawer.
+  const isMobile = useIsMobile();
+  const [mobileTab, setMobileTab] = useState<"chat" | "graph" | "predict" | "audit">("chat");
   const VOICE_RATES = [1, 1.25, 1.5, 2];
   const cycleVoiceRate = () => setVoiceRate((r) => VOICE_RATES[(VOICE_RATES.indexOf(r) + 1) % VOICE_RATES.length] ?? 1);
 
@@ -361,8 +366,71 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   const voiceActive = sessionMode === "simulate" && voiceOn && !replay; // never auto-speak a replay or role-play
   const thinking = (sessionMode === "simulate" || textRoleplay) && !replay && !awaitingPayer && (status === "active" || status === "dialing");
 
+  // The conversation is the hero on every layout. Composed once, rendered in the
+  // focused desktop column and in the mobile "Chat" tab.
+  const conversation =
+    sessionMode === "simulate" ? (
+      <StudioTranscript
+        thinking={thinking}
+        revealCount={voiceActive ? playbackReveal : undefined}
+        emptyTitle={replay ? "Loading session…" : "Starting the simulation…"}
+        emptyDescription="The agent and payer converse end-to-end on real models. The agent's reasoning — graph traversal, thinking, and predictions — streams above each turn."
+      />
+    ) : textRoleplay ? (
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        {!replay && <RoleCard scenarioId={scenarioId} />}
+        <StudioTranscript
+          thinking={thinking}
+          emptyTitle={replay ? "Loading session…" : "The agent is placing the call…"}
+          emptyDescription="You're the payer rep. The agent leads — authenticating, asking for what it needs — and you respond. Its reasoning, graph walk, and predictions stream above each turn."
+        />
+        {!replay && (
+          <div className="flex shrink-0 flex-col gap-2">
+            {awaitingPayer && (predictionSet?.predictions?.length ?? 0) > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <span className="px-1 text-[11px] font-medium text-muted-foreground">Suggested replies — what the rep might say</span>
+                <Suggestions
+                  items={predictionSet!.predictions.slice(0, 3).map((p) => ({
+                    label: p.utterance,
+                    hint: `${p.intent} · ${Math.round(p.confidence * 100)}%`,
+                  }))}
+                  onPick={(t) => say(t)}
+                />
+              </div>
+            )}
+            <PayerReplyBar awaiting={awaitingPayer} onSend={say} />
+          </div>
+        )}
+      </div>
+    ) : liveInfo ? (
+      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+        <LiveKitRoom
+          serverUrl={liveInfo.url}
+          token={liveInfo.token}
+          connect
+          audio
+          video={false}
+          onConnected={() => applyEvent({ kind: "status", status: "active", phase: 0, elapsedMs: 0 })}
+          onDisconnected={endSession}
+          onError={(err) => {
+            setLiveError(err.message);
+            endSession();
+          }}
+        >
+          <RoomAudioRenderer />
+          <LiveStage onEnd={newSession} />
+        </LiveKitRoom>
+      </Card>
+    ) : (
+      <Card className="flex h-full flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <Radio className="h-8 w-8 animate-pulse text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">{liveError ?? "Connecting to the live session…"}</p>
+        {liveError && <Button variant="outline" onClick={newSession}>Back to setup</Button>}
+      </Card>
+    );
+
   return (
-    <div className="flex h-[calc(100vh-7rem)] min-h-[560px] flex-col gap-6">
+    <div className="flex h-[calc(100vh-7rem)] min-h-[560px] flex-col gap-4">
       <SessionHeader
         scenario={scenario}
         mode={sessionMode ?? pageMode}
@@ -375,97 +443,147 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
         onCycleVoiceRate={cycleVoiceRate}
         onNewSession={newSession}
         onInspect={() => setDrawer(true)}
+        isMobile={isMobile}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12">
-        {/* ---- Conversation hero (Claude/ChatGPT/Perplexity style) ---- */}
-        <div className="flex min-h-0 flex-col lg:col-span-8">
-          {sessionMode === "simulate" ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
-                <StudioTranscript
-                  thinking={thinking}
-                  revealCount={voiceActive ? playbackReveal : undefined}
-                  emptyTitle={replay ? "Loading session…" : "Starting the simulation…"}
-                  emptyDescription="The agent and payer converse end-to-end on real local models. The agent's reasoning — graph traversal, thinking, and predictions — streams above each turn."
-                />
-                <InlineMetrics />
+      {isMobile ? (
+        /* ---- Mobile: segmented Chat | Insights | Audit, one view at a time ---- */
+        <>
+          <SegmentedControl
+            value={mobileTab}
+            onChange={setMobileTab}
+            items={[
+              { value: "chat", label: "Chat", icon: <MessageSquareText className="h-3.5 w-3.5" /> },
+              { value: "graph", label: "Graph", icon: <Network className="h-3.5 w-3.5" /> },
+              { value: "predict", label: "Predict", icon: <Sparkles className="h-3.5 w-3.5" /> },
+              { value: "audit", label: "Audit", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+            ]}
+          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            {mobileTab === "chat" ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {conversation}
+                <StatusLine />
               </div>
-            </div>
-          ) : textRoleplay ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-3">
-                {!replay && <RoleCard scenarioId={scenarioId} />}
-                <StudioTranscript
-                  thinking={thinking}
-                  emptyTitle={replay ? "Loading session…" : "The agent is placing the call…"}
-                  emptyDescription="You're the payer rep. The agent leads — authenticating, asking for what it needs — and you respond. Its reasoning, graph walk, and predictions stream above each turn."
-                />
-                {!replay && (
-                  <div className="flex shrink-0 flex-col gap-2">
-                    {awaitingPayer && (predictionSet?.predictions?.length ?? 0) > 0 && (
-                      <div className="flex flex-col gap-1.5">
-                        <span className="px-1 text-[11px] font-medium text-muted-foreground">Suggested replies — what the rep might say</span>
-                        <Suggestions
-                          items={predictionSet!.predictions.slice(0, 3).map((p) => ({
-                            label: p.utterance,
-                            hint: `${p.intent} · ${Math.round(p.confidence * 100)}%`,
-                          }))}
-                          onPick={(t) => say(t)}
-                        />
-                      </div>
-                    )}
-                    <PayerReplyBar awaiting={awaitingPayer} onSend={say} />
-                  </div>
-                )}
-                <InlineMetrics />
+            ) : mobileTab === "graph" ? (
+              <div className="min-h-0 flex-1">
+                <ContextGraphView />
               </div>
+            ) : mobileTab === "predict" ? (
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+                <VitalsCard />
+                <PredictionTree />
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <AuditLedger />
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* ---- Desktop: centered conversation + the live-mind rail (graph /
+               anticipation / vitals). The rail shows on wide screens; on tablet
+               it collapses and the panels are one tap away via Insights. ---- */
+        <div className="flex min-h-0 flex-1 gap-4">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
+              {conversation}
             </div>
-          ) : liveInfo ? (
-            <Card className="flex h-full min-h-0 flex-col overflow-hidden">
-              <LiveKitRoom
-                serverUrl={liveInfo.url}
-                token={liveInfo.token}
-                connect
-                audio
-                video={false}
-                onConnected={() => applyEvent({ kind: "status", status: "active", phase: 0, elapsedMs: 0 })}
-                onDisconnected={endSession}
-                onError={(err) => {
-                  setLiveError(err.message);
-                  endSession();
-                }}
-              >
-                <RoomAudioRenderer />
-                <LiveStage onEnd={newSession} />
-              </LiveKitRoom>
-            </Card>
-          ) : (
-            <Card className="flex h-full flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-              <Radio className="h-8 w-8 animate-pulse text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">{liveError ?? "Connecting to the live session…"}</p>
-              {liveError && <Button variant="outline" onClick={newSession}>Back to setup</Button>}
-            </Card>
-          )}
+            <StatusLine />
+          </div>
+          <aside className="hidden min-h-0 w-[340px] shrink-0 lg:block xl:w-[380px]">
+            <StudioSidecar />
+          </aside>
         </div>
-
-        {/* ---- Right rail: context graph + prediction (fits, no scroll) ---- */}
-        <aside className="min-h-0 lg:col-span-4">
-          <StudioSidecar />
-        </aside>
-      </div>
+      )}
 
       {sessionMode === "simulate" && <SimVoicePlayer enabled={voiceActive} rate={voiceRate} agentVoiceId={voiceId} payerVoiceId={payerVoiceId} />}
 
-      {/* ---- Full inspect drawer ---- */}
+      {/* ---- Insights drawer (desktop on-demand panels) ---- */}
       <Sheet open={drawer} onOpenChange={setDrawer}>
         <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-xl">
           <SheetHeader className="border-b border-border px-4 py-3">
-            <SheetTitle>Inspect</SheetTitle>
+            <SheetTitle>Insights</SheetTitle>
           </SheetHeader>
           <InspectTabs />
         </SheetContent>
       </Sheet>
+    </div>
+  );
+}
+
+/** Sleek segmented control used for the mobile Chat | Insights | Audit switch. */
+function SegmentedControl<T extends string>({
+  value,
+  onChange,
+  items,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  items: { value: T; label: string; icon?: React.ReactNode }[];
+}) {
+  return (
+    <div className="inline-flex w-full rounded-xl border border-border bg-secondary/40 p-1">
+      {items.map((it) => (
+        <button
+          key={it.value}
+          type="button"
+          onClick={() => onChange(it.value)}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+            value === it.value
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {it.icon}
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Slim always-on status line under the conversation — the at-a-glance vitals
+ *  (completion / escalation) plus run metrics, replacing the heavy right-rail
+ *  vitals card on the main view (full vitals live in the Insights panel). */
+function StatusLine() {
+  const metrics = useCallStore((s) => s.metrics);
+  const prediction = useCallStore((s) => s.prediction);
+  const m = metrics ?? { inferences: 0, toolCalls: 0, phiAccesses: 0, toolErrors: 0, promptTokens: 0, completionTokens: 0, avgLatencyMs: 0 };
+  const completion = prediction?.completionProbability;
+  const escalation = prediction?.escalationRisk;
+  const escTone = (escalation ?? 0) >= 0.6 ? "text-red-500" : (escalation ?? 0) >= 0.3 ? "text-amber-500" : "text-emerald-500";
+  const items = [
+    { label: "avg latency", value: m.avgLatencyMs ? `${m.avgLatencyMs}ms` : "—" },
+    { label: "inferences", value: `${m.inferences}` },
+    { label: "tools", value: `${m.toolCalls}` },
+    { label: "PHI", value: `${m.phiAccesses}` },
+    { label: "tokens", value: m.completionTokens ? `${m.completionTokens}` : "—" },
+  ];
+  return (
+    <div className="mx-auto mt-1 flex w-full max-w-3xl flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/70 px-1 py-2 text-[11px] text-muted-foreground">
+      {completion != null && (
+        <span className="flex items-center gap-1.5">
+          <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+          <span className="tabular font-semibold text-foreground">{formatPercent(completion)}</span>
+          <span className="text-muted-foreground/70">complete</span>
+        </span>
+      )}
+      {escalation != null && (
+        <span className="flex items-center gap-1.5">
+          <span className={cn("tabular font-semibold", escTone)}>{formatPercent(escalation)}</span>
+          <span className="text-muted-foreground/70">escalation</span>
+        </span>
+      )}
+      <span className="hidden h-3 w-px bg-border sm:block" />
+      {items.map((it) => (
+        <span key={it.label} className="flex items-center gap-1.5">
+          <span className="tabular font-medium text-foreground/80">{it.value}</span>
+          <span className="text-muted-foreground/60">{it.label}</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -499,6 +617,7 @@ function SessionHeader({
   onCycleVoiceRate,
   onNewSession,
   onInspect,
+  isMobile,
 }: {
   scenario: ScenarioOpt | undefined;
   mode: "simulate" | "live";
@@ -511,6 +630,7 @@ function SessionHeader({
   onCycleVoiceRate: () => void;
   onNewSession: () => void;
   onInspect: () => void;
+  isMobile: boolean;
 }) {
   // TTS is the only credit-spender; default OFF. "Voiced" = paced + ElevenLabs.
   const ttsEnabled = useSettings((s) => s.ttsEnabled);
@@ -526,81 +646,94 @@ function SessionHeader({
   const elapsedMs = useElapsedMs(startedWallMs, status);
   const meta = STATUS_META[status];
   const running = status === "active" || status === "dialing";
+  const title = scenario ? `${scenario.payer} — ${scenario.title}` : full ? `${full.payer} — ${full.title}` : "Session";
+  const modelLabel = (model || "").split("/").pop();
+
+  // Reusable header pieces — composed inline on desktop, stacked compactly on mobile.
+  const chips = (
+    <>
+      <StatusChip tone={mode === "live" ? "blue" : "violet"}>
+        {mode === "live" ? <Radio className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+        {mode === "live" ? "Live" : "Simulate"}
+      </StatusChip>
+      <StatusChip tone={meta.tone} dot pulse={meta.pulse}>{meta.label}</StatusChip>
+      {replay && <StatusChip tone="blue"><History className="h-3 w-3" /> Replay</StatusChip>}
+      {!replay && <span className="tabular text-base font-semibold text-foreground">{formatClock(elapsedMs)}</span>}
+      {modelLabel && <StatusChip tone="violet"><Brain className="h-3 w-3" /> {modelLabel}</StatusChip>}
+    </>
+  );
+
+  const playback =
+    mode === "simulate" && !replay ? (
+      <div className="flex items-center gap-1.5">
+        {/* Read = instant text. Listen = paced but silent. Voiced = paced + TTS (credits). */}
+        <div className="inline-flex rounded-lg border border-border p-0.5">
+          <PlaybackBtn active={!voiceOn} onClick={() => onSetVoice(false)} label="Read" title="Read — instant, full speed, no audio" />
+          <PlaybackBtn active={voiceOn && !ttsEnabled} onClick={() => { onSetVoice(true); setTtsEnabled(false); }} label="Listen" title="Listen — paced back-and-forth, silent (no ElevenLabs credits)" />
+          <PlaybackBtn active={voiceOn && ttsEnabled} onClick={() => { onSetVoice(true); setTtsEnabled(true); }} icon={<Volume2 className="h-3.5 w-3.5" />} label="Voiced" title="Voiced — paced + ElevenLabs read-aloud (uses credits)" />
+        </div>
+        {voiceOn && (
+          <Button variant="outline" size="sm" className="tabular font-medium" onClick={onCycleVoiceRate} title="Playback speed">
+            {voiceRate}×
+          </Button>
+        )}
+      </div>
+    ) : null;
+
+  const transport =
+    mode === "simulate" && !replay ? (
+      <>
+        {(status === "active" || status === "paused") && (
+          <Button variant="outline" size="sm" onClick={status === "paused" ? resume : pause}>
+            {status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          </Button>
+        )}
+        {running && (
+          <Button variant="outline" size="sm" onClick={stop} disabled={!runId}>
+            <Square className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </>
+    ) : null;
+
+  const newBtn = (
+    <Button size="sm" className="shrink-0" onClick={onNewSession}>
+      <Plus className="h-3.5 w-3.5" /> {isMobile ? "New" : "New session"}
+    </Button>
+  );
 
   return (
     <div className="flex flex-col gap-3">
-      <PageHeader
-        title={scenario ? `${scenario.payer} — ${scenario.title}` : "Session"}
-        actions={
-          <>
-            <StatusChip tone={mode === "live" ? "blue" : "violet"}>
-              {mode === "live" ? <Radio className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
-              {mode === "live" ? "Live" : "Simulate"}
-            </StatusChip>
-            <StatusChip tone={meta.tone} dot pulse={meta.pulse}>{meta.label}</StatusChip>
-            {replay && <StatusChip tone="blue"><History className="h-3 w-3" /> Replay</StatusChip>}
-
-            {!replay && <span className="tabular text-lg font-semibold text-foreground">{formatClock(elapsedMs)}</span>}
-            <StatusChip tone="violet"><Brain className="h-3 w-3" /> {model.split("/").pop()}</StatusChip>
-
-            {mode === "simulate" && !replay && (
-              <div className="flex items-center gap-1.5">
-                {/* Read = instant text. Listen = paced but silent (no credits).
-                    Voiced = paced + ElevenLabs read-aloud (uses credits). */}
-                <div className="inline-flex rounded-lg border border-border p-0.5">
-                  <PlaybackBtn
-                    active={!voiceOn}
-                    onClick={() => onSetVoice(false)}
-                    label="Read"
-                    title="Read — instant, full speed, no audio"
-                  />
-                  <PlaybackBtn
-                    active={voiceOn && !ttsEnabled}
-                    onClick={() => { onSetVoice(true); setTtsEnabled(false); }}
-                    label="Listen"
-                    title="Listen — paced back-and-forth, silent (no ElevenLabs credits)"
-                  />
-                  <PlaybackBtn
-                    active={voiceOn && ttsEnabled}
-                    onClick={() => { onSetVoice(true); setTtsEnabled(true); }}
-                    icon={<Volume2 className="h-3.5 w-3.5" />}
-                    label="Voiced"
-                    title="Voiced — paced + ElevenLabs read-aloud (uses credits)"
-                  />
-                </div>
-                {voiceOn && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="tabular font-medium"
-                    onClick={onCycleVoiceRate}
-                    title="Playback speed"
-                  >
-                    {voiceRate}×
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {mode === "simulate" && !replay && (status === "active" || status === "paused") && (
-              <Button variant="outline" size="sm" onClick={status === "paused" ? resume : pause}>
-                {status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+      {isMobile ? (
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight text-foreground">{title}</h1>
+            {newBtn}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">{chips}</div>
+          {(playback || transport) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {playback}
+              {transport}
+            </div>
+          )}
+        </div>
+      ) : (
+        <PageHeader
+          title={title}
+          actions={
+            <>
+              {chips}
+              {playback}
+              {transport}
+              <Button variant="outline" size="sm" onClick={onInspect}>
+                <Layers className="h-3.5 w-3.5" /> Insights
               </Button>
-            )}
-            {mode === "simulate" && !replay && running && (
-              <Button variant="outline" size="sm" onClick={stop} disabled={!runId}>
-                <Square className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={onInspect}>
-              <PanelRightOpen className="h-3.5 w-3.5" /> Inspect
-            </Button>
-            <Button size="sm" onClick={onNewSession}>
-              <Plus className="h-3.5 w-3.5" /> New session
-            </Button>
-          </>
-        }
-      />
+              {newBtn}
+            </>
+          }
+        />
+      )}
 
       {/* meta strip: scenario phases + member context PHI */}
       <Card className="flex flex-col gap-2.5 p-3">
@@ -647,13 +780,13 @@ function SessionHeader({
 }
 
 function InspectTabs() {
-  const [tab, setTab] = useState<"predictive" | "graph" | "audit">("predictive");
+  const [tab, setTab] = useState<"insights" | "predictive" | "audit">("insights");
   return (
     <div className="flex flex-col gap-3 p-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="w-full">
+          <TabsTrigger value="insights" className="flex-1"><span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" /> Insights</span></TabsTrigger>
           <TabsTrigger value="predictive" className="flex-1"><span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> Predictive</span></TabsTrigger>
-          <TabsTrigger value="graph" className="flex-1"><span className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Graph</span></TabsTrigger>
           <TabsTrigger value="audit" className="flex-1"><span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Audit</span></TabsTrigger>
         </TabsList>
       </Tabs>
@@ -667,7 +800,13 @@ function InspectTabs() {
             transition={{ duration: 0.2 }}
             className="h-full"
           >
-            {tab === "predictive" ? <PredictivePanel /> : tab === "graph" ? <ContextGraphView /> : <AuditLedger />}
+            {tab === "insights" ? (
+              <div className="h-[620px]"><StudioSidecar /></div>
+            ) : tab === "predictive" ? (
+              <PredictivePanel />
+            ) : (
+              <AuditLedger />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -761,25 +900,3 @@ function PayerReplyBar({ awaiting, onSend }: { awaiting: boolean; onSend: (t: st
 }
 
 /** A slim, single-line metrics readout (no KPI cards) shown under the thread. */
-function InlineMetrics() {
-  const metrics = useCallStore((s) => s.metrics);
-  const m = metrics ?? { inferences: 0, toolCalls: 0, phiAccesses: 0, toolErrors: 0, promptTokens: 0, completionTokens: 0, avgLatencyMs: 0 };
-  const items = [
-    { icon: <Cpu className="h-3.5 w-3.5" />, label: "avg latency", value: m.avgLatencyMs ? `${m.avgLatencyMs}ms` : "—" },
-    { icon: <Activity className="h-3.5 w-3.5" />, label: "inferences", value: `${m.inferences}` },
-    { icon: <Wrench className="h-3.5 w-3.5" />, label: "tools", value: `${m.toolCalls}` },
-    { icon: <Lock className="h-3.5 w-3.5" />, label: "PHI", value: `${m.phiAccesses}` },
-    { icon: <Coins className="h-3.5 w-3.5" />, label: "tokens", value: m.completionTokens ? `${m.completionTokens}` : "—" },
-  ];
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-      {items.map((it) => (
-        <span key={it.label} className="flex items-center gap-1.5">
-          <span className="text-muted-foreground/70">{it.icon}</span>
-          <span className="tabular font-medium text-foreground/80">{it.value}</span>
-          <span className="text-muted-foreground/60">{it.label}</span>
-        </span>
-      ))}
-    </div>
-  );
-}

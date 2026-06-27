@@ -14,6 +14,7 @@ import {
   Radio,
   ScrollText,
   Settings as SettingsIcon,
+  ShieldCheck,
   Sparkles,
   Sun,
   Users,
@@ -48,7 +49,8 @@ const NAV = [
   { path: "/models", label: "Models", icon: <Boxes /> },
   { path: "/analytics", label: "Analytics", icon: <BarChart3 /> },
   { path: "/calls", label: "Call History", icon: <History /> },
-  { path: "/logs", label: "Logs & Audit", icon: <ScrollText /> },
+  { path: "/logs", label: "Logs", icon: <ScrollText /> },
+  { path: "/audit", label: "Audit", icon: <ShieldCheck /> },
   { path: "/integrations", label: "Integrations", icon: <Plug /> },
 ];
 

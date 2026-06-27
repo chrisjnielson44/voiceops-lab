@@ -17,6 +17,7 @@ import {
   Plug,
   Radio,
   ScrollText,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
 } from "lucide-react";
@@ -183,7 +184,8 @@ export function HomeView({ onNavigate }: { onNavigate: (path: string) => void })
 
   const resources = [
     { label: "Analytics", desc: "Outcomes & volume", icon: <BarChart3 className="h-4 w-4" />, path: "/analytics" },
-    { label: "Logs & Audit", desc: "Event stream & ledger", icon: <ScrollText className="h-4 w-4" />, path: "/logs" },
+    { label: "Logs", desc: "Per-call event stream", icon: <ScrollText className="h-4 w-4" />, path: "/logs" },
+    { label: "Audit", desc: "Hash-chained ledger", icon: <ShieldCheck className="h-4 w-4" />, path: "/audit" },
     { label: "Voices", desc: "ElevenLabs catalog", icon: <AudioLines className="h-4 w-4" />, path: "/voices" },
     { label: "Integrations", desc: "Telephony & providers", icon: <Plug className="h-4 w-4" />, path: "/integrations" },
   ];

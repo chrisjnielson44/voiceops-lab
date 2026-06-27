@@ -7,6 +7,10 @@ import path from "node:path";
 import pg from "pg";
 import { betterAuth } from "better-auth";
 import { admin, organization } from "better-auth/plugins";
+// Hosted Better Auth dashboard ("Dash") — analytics + ownership verification for
+// the console at better-auth's dashboard. Only activated when BETTER_AUTH_API_KEY
+// is set (i.e. deployed), so local dev runs without it.
+import { dash } from "@better-auth/infra";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -80,5 +84,16 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: false,
       teams: { enabled: true, defaultTeam: { enabled: false } },
     }),
+    // Dash dashboard/ownership verification — only when its API key is present
+    // (deployed). Reads optional API/KV URLs too; absent locally → plugin off.
+    ...(process.env.BETTER_AUTH_API_KEY
+      ? [
+          dash({
+            apiKey: process.env.BETTER_AUTH_API_KEY,
+            apiUrl: process.env.BETTER_AUTH_API_URL,
+            kvUrl: process.env.BETTER_AUTH_KV_URL,
+          }),
+        ]
+      : []),
   ],
 });

@@ -98,51 +98,9 @@ firing off the critical path. Nothing is scripted — the agent decides every ac
 as JSON, the counterparty replies as a model (or a human, in role‑play), and the
 context graph grounds each turn.
 
-```
-POST /api/agent/start → create_run → asyncio.create_task(run_orchestrator)
- status:dialing → load ground truth → seed counterparty persona → status:active
-
- for step in range(MAX_STEPS=16)   (until end / stop):
-   │
-   │ (1) retrieve_context()                         [context_graph.py]
-   │     graph built ONCE from the SAME tables the tools read
-   │     seed (focus + EXACT-token transcript hits) → weighted k-hop BFS
-   │       score ×= EDGE_WEIGHT × DECAY(0.6)^hops ; × TYPE_PRIORITY[intent]
-   │       + missing-field bonus(+0.3) ; notes ≥ 0.85 ; lit if score ≥ 0.05
-   │     serialize ≤ 3200 chars  ⇒ EPHEMERAL read-only CONTEXT message
-   │       (rebuilt fresh each turn, NEVER appended to the running transcript)
-   │     ── emit 'graph' (delta-gated) + 'audit' context.retrieve (PHI-scoped)
-   │
-   │ (2) agent decision                  [chat_stream, reasoning model]
-   │     delta.reasoning / delta.content streamed ── throttle ≥64 chars ──▶
-   │     ── emit 'reasoning' (token-by-token CoT) ; parse ONE JSON action
-   │     GUARD: end | record_status | summarize before any counterparty reply
-   │            & guard_nudges<3  → re-prompt to greet/authenticate first
-   │
-   │ (3a) action = tool:
-   │        prefetch_key(tool,args) in cache & ready?
-   │          yes → serve from speculative cache (hit++, savedMs += latency,
-   │                  evict single-use)  ── emit 'prefetch'(hit) + 'tool'
-   │          no  → execute_tool() LIVE SQL  (misses++)
-   │        fold the returned row into the graph (widen / note) ── emit 'tool'
-   │        if PHI: paired 'tool.call' + 'phi.access' chained audit events
-   │
-   │ (3b) action = speak → push agent turn (grounded / anticipated counts)
-   │        counterparty reply: fast model (autonomous) OR human via /say
-   │
-   │ (4) fire_anticipation()       [OFF critical path, cancel-on-supersede]
-   │        fast model → 'prediction'(gauges) + 'predictionSet'(ranked +
-   │        hit-rate scoreboard) ; warm top-2 conf ≥ 0.45 idempotent reads
-   │        ── emit 'prefetch'(prefetching → ready)   [authoritative path UNAFFECTED]
-   ▼
- finalize: await the final prediction → call.complete / call.escalate audit
-   _persist_run → call_runs(event_stream JSONB) + call_events(SHA-256 chain)
-   ── emit 'done' → STREAM_END
-
- every emit() → appends to run.events (replay buffer) + fans out to SSE queues.
- GET /api/agent/stream replays the buffer then tails live (15s keep-alives);
- a cold run replays from the persisted event_stream — one store powers live & replay.
-```
+<p align="center">
+  <img src="docs/call-flow.png" alt="Anatomy of one call — start, then a 16-step turn loop (retrieve context → agent decision → act → anticipate), then finalize and persist; every event fans out over SSE" width="760">
+</p>
 
 The SSE envelope is a single discriminated union with **12 declared event kinds**
 (`status, turn, tool, reasoning, prediction, predictionSet, prefetch, graph,
@@ -169,16 +127,9 @@ module is **unit‑testable with canned rows** (no DB import at the top level).
 
 **Build.** Foreign‑key relationships become a typed, labeled graph:
 
-```
-        COVERED_BY              HAS_COVERAGE         ON_PLAN
- member ──────────▶ payer       member ──────▶ coverage ──────▶ plan
-   │  SEEN_BY                      │  HAS_CLAIM        DENIED_FOR
-   ├──────────▶ provider          ├──────────▶ claim ──────────▶ carc (denial code)
-   │  HAS_AUTH                     │  SUBMITTED ▲
-   └──────────▶ auth      provider ────────────┘
-   │  NOTED
-   └──────────▶ note   ← facts the agent records live on the call (working memory)
-```
+<p align="center">
+  <img src="docs/context-graph.png" alt="The context graph — a member-centered, foreign-key-derived graph (payer, provider, coverage, plan, claim, carc, auth, notes) with labeled edges; hub edges carry low weight to prevent cross-member PHI leakage" width="820">
+</p>
 
 **Retrieve (each turn)** — `retrieve(transcript, missing_fields, intent)`:
 
@@ -310,19 +261,9 @@ domain‑specific. A pack supplies its scenarios, the three role prompts
 per‑call context, an optional retrieval graph, speculative‑prefetch hints, and a
 redaction scope for the audit ledger.
 
-```
-┌──────────────────────────── orchestrator ────────────────────────────┐
-│  knows only:  scenarios · prompts · tools · graph · prefetch · scope  │
-└───────────────────────────────────┬───────────────────────────────────┘
-                                     │  resolves via packs/registry.py
-        ┌───────────────┬────────────┼────────────┬──────────────────┐
-        ▼               ▼            ▼            ▼                  ▼
-   HealthcarePack   BankingPack   TelecomPack   CustomPack      (your pack)
-   real Neon SQL    facts-backed  facts-backed  user-authored,   append one
-   + context graph  (GenericPack) (GenericPack) DB-persisted      line to _PACKS
-   eligibility ·    card disputes outage credits
-   claims · auth    · arrangements · plan changes
-```
+<p align="center">
+  <img src="docs/packs.png" alt="One generic orchestrator fans out to domain packs — HealthcarePack (DB-backed), Banking and Telecom (facts-backed), CustomPack (user-authored), and your own — by appending one line to the registry" width="900">
+</p>
 
 - **Healthcare** is the **DB‑backed reference**: real parameterized SQL against
   Neon, a real `ContextGraph`, intent→tool prefetch mapping, and PHI tokenization
@@ -345,10 +286,9 @@ Adding a vertical is literally appending one `Pack()` to a list.
 Every call produces an **append‑only, hash‑chained audit ledger**. Each event's
 SHA‑256 hash folds in the previous event's hash:
 
-```
-hash₀ = SHA-256( GENESIS("0"×64) | canonical(event₀) )
-hashₙ = SHA-256(        hashₙ₋₁   | canonical(eventₙ) )
-```
+<p align="center">
+  <img src="docs/audit-chain.png" alt="The tamper-evident audit chain — each event's SHA-256 hash folds in the previous event's hash, starting from a 64-zero genesis; editing any event cascades and breaks verification" width="900">
+</p>
 
 The **canonical pre‑image** is a fixed‑order join of the event's fields
 (`seq | type | atMs | actor | summary | tool | phi | phiScope | redaction |

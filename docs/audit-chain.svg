@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="380" viewBox="0 0 1160 380" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="1160" height="380" fill="#ffffff"/>
+  <rect x="0" y="0" width="1160" height="6" fill="#7c3aed"/>
+
+  <text x="42" y="52" font-size="26" font-weight="700"><tspan fill="#7c3aed">VoiceLabs</tspan><tspan fill="#0f172a"> — the tamper-evident audit chain</tspan></text>
+  <text x="44" y="78" font-size="13.5" fill="#64748b">Every event's SHA-256 hash folds in the previous one — re-implemented byte-identically in 3 runtimes.</text>
+
+  <!-- genesis -->
+  <rect x="40" y="150" width="104" height="76" rx="12" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="92" y="182" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0f172a">GENESIS</text>
+  <text x="92" y="202" text-anchor="middle" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#64748b">"0" × 64</text>
+  <line x1="144" y1="188" x2="180" y2="188" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- event cards -->
+  <g>
+    <rect x="184" y="120" width="280" height="136" rx="13" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="204" y="148" font-size="14" font-weight="700" fill="#0f172a">event 0</text>
+    <text x="204" y="170" font-size="10.5" fill="#64748b">seq · type · actor · tool · phi · scope …</text>
+    <text x="204" y="196" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">canonical = seq|type|atMs|…|</text>
+    <text x="204" y="212" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">           promptVersion</text>
+    <text x="204" y="238" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">hash₀ = SHA-256(prev | canonical)</text>
+  </g>
+  <line x1="464" y1="188" x2="500" y2="188" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="482" y="178" text-anchor="middle" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">hash₀</text>
+
+  <g>
+    <rect x="504" y="120" width="280" height="136" rx="13" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="524" y="148" font-size="14" font-weight="700" fill="#0f172a">event 1</text>
+    <text x="524" y="170" font-size="10.5" fill="#64748b">tool.call → verify_eligibility</text>
+    <text x="524" y="194" font-size="10.5" fill="#64748b">paired with:</text>
+    <text x="524" y="212" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#b45309">phi.access · member:***1234</text>
+    <text x="524" y="238" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">hash₁ = SHA-256(hash₀ | canonical)</text>
+  </g>
+  <line x1="784" y1="188" x2="820" y2="188" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="802" y="178" text-anchor="middle" font-size="10" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#475569">hash₁</text>
+
+  <g>
+    <rect x="824" y="120" width="280" height="136" rx="13" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="844" y="148" font-size="14" font-weight="700" fill="#0f172a">event 2</text>
+    <text x="844" y="170" font-size="10.5" fill="#64748b">prediction.update · record · …</text>
+    <text x="844" y="196" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">excludes wall-clock →</text>
+    <text x="844" y="212" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#334155">           reproducible</text>
+    <text x="844" y="238" font-size="11" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">hash₂ = SHA-256(hash₁ | canonical)</text>
+  </g>
+  <line x1="1104" y1="188" x2="1140" y2="188" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="1130" y="178" text-anchor="middle" font-size="13" fill="#94a3b8">…</text>
+
+  <!-- caption -->
+  <rect x="40" y="288" width="1064" height="72" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.2"/>
+  <text x="572" y="314" text-anchor="middle" font-size="12" fill="#334155">Editing, reordering, or deleting any event breaks that event and every event after it. <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">verify_ledger</tspan> re-walks and checks both directions.</text>
+  <text x="572" y="338" text-anchor="middle" font-size="12" fill="#334155">The identical canonical encoding runs in the FastAPI backend, the dependency-free LiveKit worker, and the browser — so a server ledger re-verifies client-side.</text>
+</svg>

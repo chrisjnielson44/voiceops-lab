@@ -27,6 +27,7 @@ MEMBERS = [
     ("CIG-771-40682", "Priya Nair", "1990-07-30", "Cigna", "CIG-330", "Open Access Plus", "CIG-9043"),
     ("BCBS-220-77451", "Devon Carter", "1978-02-14", "BCBS", "BCBS-101", "Blue PPO", "BC-3320"),
     ("HUM-664-10298", "Alicia Romero", "1965-09-05", "Humana", "HUM-410", "Gold Plus HMO", "HU-7781"),
+    ("ANT-883-50127", "Sofia Mendoza", "1988-12-03", "Anthem", "ANT-225", "Premier PPO", "AN-6610"),
 ]
 
 COVERAGE = [
@@ -35,6 +36,7 @@ COVERAGE = [
     ("CIG-771-40682", True, "2026-01-01", 20, 45, 1000, 300, 5000, 900),
     ("BCBS-220-77451", True, "2026-01-01", 25, 45, 1750, 1750, 6500, 3100),
     ("HUM-664-10298", True, "2026-01-01", 0, 35, 0, 0, 4500, 1500),
+    ("ANT-883-50127", True, "2026-01-01", 30, 55, 2500, 1200, 7000, 2600),
 ]
 
 CLAIMS = [
@@ -45,6 +47,11 @@ CLAIMS = [
      "Precertification/authorization absent for procedure.",
      "File appeal with retro-auth request and operative note.", "2026-09-02"),
     ("BCBS-5512", "BCBS-220-77451", "2026-05-09", 210.0, "99213", "PAID", None, None, None, None),
+    # Anthem MRI denied for "auth not on file" — but the PA (PA-90233) was approved
+    # a week AFTER the claim adjudicated. The reconciliation case: resubmit, not appeal.
+    ("ANT-7741", "ANT-883-50127", "2026-05-20", 2890.0, "70553", "DENIED", "CARC 197",
+     "Authorization not on file at time of adjudication (prior auth was still pending).",
+     "Resubmit as a corrected claim now that the PA is approved, citing the PA reference.", "2026-11-20"),
 ]
 
 PRIOR_AUTHS = [
@@ -52,6 +59,8 @@ PRIOR_AUTHS = [
      "Conservative treatment history not documented for the headache indication.",
      "Medical director — peer-to-peer review required.", None),
     ("PA-44115", "BCBS-220-77451", "73721", "APPROVED", None, "Auto-approved per clinical criteria.", "APPROVED"),
+    ("PA-90233", "ANT-883-50127", "70553", "APPROVED", None,
+     "Auto-approved 2026-05-28 — eight days after the claim adjudicated.", "APPROVED"),
 ]
 
 
