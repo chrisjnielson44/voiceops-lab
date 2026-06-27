@@ -60,6 +60,22 @@ class Settings(BaseSettings):
     # --- Runtime flags -------------------------------------------------------
     voiceops_demo_mode: str = "true"
     voiceops_prompt_version: str = "payer-ops-v4.0"
+    # Which call engine drives a run: "legacy" = the hand-rolled loop in
+    # orchestrator.py; "langgraph" = the StateGraph engine in app/agent/graph.
+    # Both emit the identical SSE event stream + audit-hash chain, so the cockpit
+    # is unaffected by the choice. Kept a flag during the migration.
+    agent_engine: str = "legacy"
+    # Tools that require a human approval interrupt before they execute (writes /
+    # escalations). Comma-separated tool names; empty = no approval gating.
+    # Only honoured by the langgraph engine (native interrupts).
+    agent_approval_tools: str = ""
+
+    # --- LLM observability (Langfuse) ---------------------------------------
+    # When both keys are set, every inference + tool + node is traced to Langfuse
+    # (self-hostable, so this stays local-first). Unset = tracing is a no-op.
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
 
     # --- Service / auth boundary --------------------------------------------
     # Comma-separated CORS allowlist; the web SPA / auth-server origins in dev.
@@ -105,6 +121,18 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def approval_tools(self) -> set[str]:
+        return {t.strip() for t in self.agent_approval_tools.split(",") if t.strip()}
+
+    @property
+    def use_langgraph(self) -> bool:
+        return (self.agent_engine or "legacy").strip().lower() == "langgraph"
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
 
 @lru_cache

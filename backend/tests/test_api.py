@@ -138,8 +138,8 @@ async def test_voice_options(client, monkeypatch):
     r = await client.get("/api/voice/options")
     assert r.status_code == 200
     body = r.json()
-    # Built-in domain packs: healthcare (3) + banking (3) + telecom (3).
-    assert len(body["scenarios"]) == 9
+    # Built-in domain packs: healthcare (5) + banking (3) + telecom (3).
+    assert len(body["scenarios"]) == 11
     assert all(s["id"] and s["objective"] for s in body["scenarios"])
     assert len(body["models"]) >= 1
     assert len(body["voices"]) >= 1

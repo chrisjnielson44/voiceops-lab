@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Bot, Mic, Database, Sparkles, Check } from "lucide-react";
 
 import { useCallStore, type FeedItem } from "@/state/useCallStore";
@@ -34,6 +35,42 @@ function ThinkingRow({ label }: { label: string }) {
 
 function roleOf(speaker: Speaker): MessageRole {
   return speaker === "ivr" ? "system" : speaker;
+}
+
+/**
+ * Typewriter reveal for the latest live agent turn. The backend can't stream the
+ * spoken text token-by-token (it's embedded in a JSON action that's only valid
+ * once complete), so we animate the reveal client-side when the turn lands —
+ * giving the agent's reply the same "typing out" feel as its streamed reasoning.
+ * `key` is the turn id being streamed (null = show full text, no animation).
+ */
+function useTypewriter(text: string, key: string | null): string {
+  const [shown, setShown] = useState(text);
+  const rafRef = useRef(0);
+  useEffect(() => {
+    if (!key || !text) {
+      setShown(text);
+      return;
+    }
+    let cancelled = false;
+    const len = text.length;
+    const duration = Math.min(1600, Math.max(350, len * 14));
+    const start = performance.now();
+    setShown("");
+    const tick = (now: number) => {
+      if (cancelled) return;
+      const p = Math.min(1, (now - start) / duration);
+      setShown(text.slice(0, Math.floor(len * p)));
+      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+      else setShown(text);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [text, key]);
+  return key ? shown : text;
 }
 
 export interface LiveMessage {
@@ -161,9 +198,21 @@ export function StudioTranscript({
   revealCount?: number;
 }) {
   const feed = useCallStore((s) => s.feed);
+  const status = useCallStore((s) => s.status);
   // Only show what the playback has revealed (voice on) or everything (off).
   const visible = revealCount == null ? feed : feed.slice(0, Math.max(0, revealCount));
   const caughtUp = revealCount == null || revealCount >= feed.length;
+
+  // Stream the agent's spoken text as it lands. Target the most recent feed item
+  // only when it's an agent turn, the call is live, and we're not pacing to audio
+  // (Read mode) — replays and finished calls render instantly.
+  const live = status === "active" || status === "dialing";
+  const lastFeed = visible[visible.length - 1];
+  const streamTurn =
+    revealCount == null && live && lastFeed?.kind === "turn" && (lastFeed.turn.speaker === "agent" || lastFeed.turn.speaker === "ivr")
+      ? lastFeed.turn
+      : null;
+  const revealed = useTypewriter(streamTurn?.text ?? "", streamTurn?.id ?? null);
 
   // Derive a live activity label from who spoke last among VISIBLE turns.
   let thinkingLabel = "Agent is working";
@@ -202,7 +251,7 @@ export function StudioTranscript({
   const groups = groupFeed(visible);
 
   return (
-    <Conversation deps={`${visible.length}:${thinking}:${streamSig}:${revealCount ?? -1}`}>
+    <Conversation deps={`${visible.length}:${thinking}:${streamSig}:${revealCount ?? -1}:${revealed.length}`}>
       {feed.length === 0 && !thinking ? (
         <ConversationEmptyState icon={<Mic className="h-6 w-6" />} title={emptyTitle} description={emptyDescription} />
       ) : (
@@ -224,7 +273,9 @@ export function StudioTranscript({
                   atMs={g.turn.atMs}
                   chips={agentSide ? <TurnChips turn={g.turn} tools={g.tools} /> : undefined}
                 >
-                  <Response>{g.turn.text}</Response>
+                  <Response streaming={streamTurn?.id === g.turn.id}>
+                    {streamTurn?.id === g.turn.id ? revealed : g.turn.text}
+                  </Response>
                 </Message>
               </div>
             );

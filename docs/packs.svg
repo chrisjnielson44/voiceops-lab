@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="440" viewBox="0 0 1180 440" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="1180" height="440" fill="#ffffff"/>
+  <rect x="0" y="0" width="1180" height="6" fill="#7c3aed"/>
+
+  <text x="42" y="52" font-size="26" font-weight="700"><tspan fill="#7c3aed">VoiceLabs</tspan><tspan fill="#0f172a"> — one engine, many verticals</tspan></text>
+  <text x="44" y="78" font-size="13.5" fill="#64748b">The orchestrator talks only to the Pack surface and knows nothing domain-specific.</text>
+
+  <!-- orchestrator -->
+  <rect x="290" y="100" width="600" height="86" rx="14" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="590" y="132" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">generic orchestrator</text>
+  <text x="590" y="156" text-anchor="middle" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">scenarios · prompts · tools · graph · prefetch · audit scope</text>
+  <text x="590" y="176" text-anchor="middle" font-size="11" font-style="italic" fill="#64748b">conversation loop · guard · prediction · hash-chained ledger</text>
+
+  <!-- fan-out arrows -->
+  <g stroke="#94a3b8" stroke-width="1.7" fill="none">
+    <path d="M590,186 C400,206 230,206 138,228" marker-end="url(#arrow)"/>
+    <path d="M590,186 C470,206 400,208 364,228" marker-end="url(#arrow)"/>
+    <line x1="590" y1="186" x2="590" y2="228" marker-end="url(#arrow)"/>
+    <path d="M590,186 C710,206 780,208 816,228" marker-end="url(#arrow)"/>
+    <path d="M590,186 C790,206 950,206 1042,228" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- pack cards -->
+  <!-- Healthcare (DB-backed) -->
+  <rect x="40" y="230" width="196" height="150" rx="13" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="138" y="258" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f172a">HealthcarePack</text>
+  <rect x="92" y="268" width="92" height="20" rx="10" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="138" y="282" text-anchor="middle" font-size="10" font-weight="700" fill="#6d28d9">DB-backed</text>
+  <text x="138" y="310" text-anchor="middle" font-size="11" fill="#334155">real Neon SQL</text>
+  <text x="138" y="328" text-anchor="middle" font-size="11" fill="#334155">+ context graph</text>
+  <text x="138" y="352" text-anchor="middle" font-size="10.5" fill="#64748b">eligibility · claims</text>
+  <text x="138" y="368" text-anchor="middle" font-size="10.5" fill="#64748b">· prior auth</text>
+
+  <!-- Banking -->
+  <rect x="266" y="230" width="196" height="150" rx="13" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="364" y="258" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f172a">BankingPack</text>
+  <rect x="306" y="268" width="116" height="20" rx="10" fill="#d1fae5" stroke="#a7f3d0"/>
+  <text x="364" y="282" text-anchor="middle" font-size="10" font-weight="700" fill="#047857">facts-backed</text>
+  <text x="364" y="312" text-anchor="middle" font-size="10.5" fill="#64748b">card disputes</text>
+  <text x="364" y="330" text-anchor="middle" font-size="10.5" fill="#64748b">payment arrangements</text>
+  <text x="364" y="348" text-anchor="middle" font-size="10.5" fill="#64748b">travel / fraud holds</text>
+
+  <!-- Telecom -->
+  <rect x="492" y="230" width="196" height="150" rx="13" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="590" y="258" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f172a">TelecomPack</text>
+  <rect x="532" y="268" width="116" height="20" rx="10" fill="#d1fae5" stroke="#a7f3d0"/>
+  <text x="590" y="282" text-anchor="middle" font-size="10" font-weight="700" fill="#047857">facts-backed</text>
+  <text x="590" y="312" text-anchor="middle" font-size="10.5" fill="#64748b">outage credits</text>
+  <text x="590" y="330" text-anchor="middle" font-size="10.5" fill="#64748b">plan changes</text>
+  <text x="590" y="348" text-anchor="middle" font-size="10.5" fill="#64748b">billing disputes</text>
+
+  <!-- Custom -->
+  <rect x="718" y="230" width="196" height="150" rx="13" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="816" y="258" text-anchor="middle" font-size="13.5" font-weight="700" fill="#0f172a">CustomPack</text>
+  <rect x="756" y="268" width="120" height="20" rx="10" fill="#fef3c7" stroke="#fde68a"/>
+  <text x="816" y="282" text-anchor="middle" font-size="10" font-weight="700" fill="#92702a">user-authored</text>
+  <text x="816" y="312" text-anchor="middle" font-size="10.5" fill="#64748b">DB-persisted</text>
+  <text x="816" y="330" text-anchor="middle" font-size="10.5" fill="#64748b">dynamic catalog</text>
+  <text x="816" y="348" text-anchor="middle" font-size="10.5" fill="#64748b">edited in the cockpit</text>
+
+  <!-- Your pack -->
+  <rect x="944" y="230" width="196" height="150" rx="13" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.6" stroke-dasharray="6 5"/>
+  <text x="1042" y="258" text-anchor="middle" font-size="13.5" font-weight="700" fill="#475569">your pack</text>
+  <text x="1042" y="306" text-anchor="middle" font-size="11" fill="#64748b">author scenarios</text>
+  <text x="1042" y="324" text-anchor="middle" font-size="11" fill="#64748b">+ a label →</text>
+  <text x="1042" y="346" text-anchor="middle" font-size="10.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#7c3aed">append to _PACKS</text>
+
+  <text x="590" y="416" text-anchor="middle" font-size="12.5" fill="#334155">Adding a vertical is one line in <tspan font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">packs/registry.py</tspan>. The loop, guard, prediction, and audit machinery never change.</text>
+</svg>

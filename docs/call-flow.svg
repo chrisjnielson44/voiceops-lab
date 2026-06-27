@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1100" viewBox="0 0 1080 1100" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="1080" height="1100" fill="#ffffff"/>
+  <rect x="0" y="0" width="1080" height="6" fill="#7c3aed"/>
+
+  <text x="42" y="52" font-size="26" font-weight="700"><tspan fill="#7c3aed">VoiceLabs</tspan><tspan fill="#0f172a"> — anatomy of one call</tspan></text>
+  <text x="44" y="78" font-size="13.5" fill="#64748b">Nothing is scripted — the agent decides every action as JSON; the context graph grounds every turn.</text>
+
+  <!-- start -->
+  <rect x="180" y="100" width="720" height="66" rx="14" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="540" y="128" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">POST /api/agent/start → run_orchestrator (background task)</text>
+  <text x="540" y="150" text-anchor="middle" font-size="12" fill="#64748b">status: dialing → load ground truth → seed counterparty persona → active</text>
+  <line x1="540" y1="166" x2="540" y2="197" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- loop container -->
+  <rect x="120" y="200" width="840" height="576" rx="18" fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-dasharray="6 5"/>
+  <text x="150" y="228" font-size="12.5" font-weight="700" fill="#475569" font-family="ui-monospace, 'SF Mono', Menlo, monospace">turn loop · for step in range(MAX_STEPS = 16)</text>
+  <path d="M880,690 L920,690 L920,250 L884,250" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="912" y="470" font-size="11" fill="#94a3b8" transform="rotate(-90 912 470)">next turn</text>
+
+  <!-- card 1 -->
+  <rect x="200" y="244" width="680" height="128" rx="13" fill="#eef2ff" stroke="#818cf8" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="200" cy="308" r="15" fill="#7c3aed"/><text x="200" y="313" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">1</text>
+  <text x="228" y="274" font-size="14.5" font-weight="700" fill="#0f172a">retrieve_context()  ·  context graph</text>
+  <text x="228" y="298" font-size="12" fill="#334155">seed (focus + exact-token transcript hits) → weighted k-hop BFS</text>
+  <text x="228" y="318" font-size="12" fill="#334155">score × edge-weight × decay^hops × intent-priority + missing-field bonus</text>
+  <text x="228" y="338" font-size="12" fill="#334155">serialize ≤ 3200 chars → ephemeral, read-only CONTEXT message (never accumulated)</text>
+  <text x="228" y="360" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">emits  graph  +  audit (context.retrieve, PHI-scoped)</text>
+
+  <!-- card 2 -->
+  <rect x="200" y="388" width="680" height="110" rx="13" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="200" cy="443" r="15" fill="#7c3aed"/><text x="200" y="448" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">2</text>
+  <text x="228" y="418" font-size="14.5" font-weight="700" fill="#0f172a">agent decision  ·  reasoning model (streamed)</text>
+  <text x="228" y="442" font-size="12" fill="#334155">chat_stream → token-by-token chain-of-thought (throttled ≥ 64 chars)</text>
+  <text x="228" y="462" font-size="12" fill="#334155">parse ONE JSON action  ·  emits  reasoning</text>
+  <text x="228" y="484" font-size="11.5" font-style="italic" fill="#64748b">GUARD: blocks end / record_status / summarize before a real exchange (≤ 3 nudges)</text>
+
+  <!-- card 3 -->
+  <rect x="200" y="512" width="680" height="116" rx="13" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="200" cy="570" r="15" fill="#7c3aed"/><text x="200" y="575" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">3</text>
+  <text x="228" y="542" font-size="14.5" font-weight="700" fill="#0f172a">act</text>
+  <text x="228" y="566" font-size="12" fill="#334155"><tspan font-weight="700" fill="#7c3aed">tool</tspan> → prefetch hit? serve from cache (savedMs)  ·  miss? run live SQL</text>
+  <text x="228" y="586" font-size="12" fill="#334155">       fold the returned row into the graph  ·  PHI → paired tool.call + phi.access audit</text>
+  <text x="228" y="610" font-size="12" fill="#334155"><tspan font-weight="700" fill="#7c3aed">speak</tspan> → push agent turn  ·  counterparty replies (fast model, or human via /say)</text>
+
+  <!-- card 4 -->
+  <rect x="200" y="644" width="680" height="116" rx="13" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5" filter="url(#shadow)"/>
+  <circle cx="200" cy="702" r="15" fill="#b45309"/><text x="200" y="707" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">4</text>
+  <text x="228" y="674" font-size="14.5" font-weight="700" fill="#0f172a">fire_anticipation()  ·  OFF the critical path  (cancel-on-supersede)</text>
+  <text x="228" y="698" font-size="12" fill="#334155">fast model → prediction (gauges) + predictionSet (ranked + hit-rate scoreboard)</text>
+  <text x="228" y="718" font-size="12" fill="#334155">warm top-2 idempotent reads ≥ 0.45 confidence → emits  prefetch</text>
+  <text x="228" y="740" font-size="11.5" font-style="italic" fill="#92702a">the authoritative tool / agent path never waits on this</text>
+
+  <line x1="540" y1="776" x2="540" y2="806" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- finalize -->
+  <rect x="180" y="808" width="720" height="112" rx="14" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="540" y="836" text-anchor="middle" font-size="14.5" font-weight="700" fill="#0f172a">finalize</text>
+  <text x="540" y="860" text-anchor="middle" font-size="12" fill="#334155">await the final anticipation → call.complete / call.escalate audit</text>
+  <text x="540" y="880" text-anchor="middle" font-size="12" fill="#334155">_persist_run → call_runs (event_stream JSONB) + call_events (SHA-256 chain)</text>
+  <text x="540" y="902" text-anchor="middle" font-size="11.5" font-family="ui-monospace, 'SF Mono', Menlo, monospace" fill="#6d28d9">emit  done  → STREAM_END</text>
+
+  <line x1="540" y1="920" x2="540" y2="950" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- bottom band -->
+  <rect x="120" y="952" width="840" height="98" rx="14" fill="#eef2ff" stroke="#818cf8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="540" y="984" text-anchor="middle" font-size="12.5" fill="#334155">every emit() → run.events replay buffer + fan-out to SSE subscriber queues</text>
+  <text x="540" y="1006" text-anchor="middle" font-size="12" fill="#334155">GET /api/agent/stream replays the buffer then tails live (15s keep-alives) · cold runs replay from event_stream</text>
+  <text x="540" y="1028" text-anchor="middle" font-size="11.5" font-style="italic" fill="#64748b">one store, one stream endpoint — powers live streaming and historical replay</text>
+</svg>

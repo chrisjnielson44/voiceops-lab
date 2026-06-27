@@ -21,6 +21,7 @@ from typing import Any, TypedDict
 import httpx
 
 from app.config import settings
+from app.observability import tracing
 from app.providers.registry import get_model
 
 
@@ -136,6 +137,7 @@ async def chat(
     max_tokens: int = 256,
     model: str | None = None,
     abort: asyncio.Event | None = None,
+    name: str = "llm.chat",
 ) -> LLMResult:
     start = time.time()
     resolved_model = model or local_model_id()
@@ -153,40 +155,55 @@ async def chat(
         **endpoint.headers,
     }
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        request = asyncio.create_task(
-            client.post(f"{endpoint.base_url}/chat/completions", json=payload, headers=headers)
-        )
-        if abort is not None:
-            abort_wait = asyncio.create_task(abort.wait())
-            done, _pending = await asyncio.wait(
-                {request, abort_wait}, return_when=asyncio.FIRST_COMPLETED
+    with tracing.observation(
+        name,
+        as_type="generation",
+        model=resolved_model,
+        input=messages,
+        model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+        metadata={"provider": endpoint.label},
+    ) as gen:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+            request = asyncio.create_task(
+                client.post(f"{endpoint.base_url}/chat/completions", json=payload, headers=headers)
             )
-            if abort_wait in done and request not in done:
-                request.cancel()
-                raise LLMAborted("run stopped during inference")
-            abort_wait.cancel()
-        res = await request
+            if abort is not None:
+                abort_wait = asyncio.create_task(abort.wait())
+                done, _pending = await asyncio.wait(
+                    {request, abort_wait}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if abort_wait in done and request not in done:
+                    request.cancel()
+                    raise LLMAborted("run stopped during inference")
+                abort_wait.cancel()
+            res = await request
 
-    if res.status_code >= 400:
-        raise _http_error(endpoint, res.status_code, res.text)
-    data = res.json()
-    choice = (data.get("choices") or [{}])[0]
-    usage = data.get("usage") or {}
-    message = choice.get("message") or {}
-    content = message.get("content") or ""
-    # Reasoning models expose their chain-of-thought either out-of-band (Ollama's
-    # OpenAI-compatible `reasoning` field) or inline as <think>…</think>.
-    reasoning = (message.get("reasoning") or message.get("reasoning_content") or "").strip()
-    if not reasoning:
-        reasoning, content = _split_think(content)
-    return LLMResult(
-        text=content,
-        latency_ms=round((time.time() - start) * 1000),
-        prompt_tokens=usage.get("prompt_tokens", 0),
-        completion_tokens=usage.get("completion_tokens", 0),
-        reasoning=reasoning,
-    )
+        if res.status_code >= 400:
+            raise _http_error(endpoint, res.status_code, res.text)
+        data = res.json()
+        choice = (data.get("choices") or [{}])[0]
+        usage = data.get("usage") or {}
+        message = choice.get("message") or {}
+        content = message.get("content") or ""
+        # Reasoning models expose their chain-of-thought either out-of-band (Ollama's
+        # OpenAI-compatible `reasoning` field) or inline as <think>…</think>.
+        reasoning = (message.get("reasoning") or message.get("reasoning_content") or "").strip()
+        if not reasoning:
+            reasoning, content = _split_think(content)
+        gen.update(
+            output=content,
+            usage_details={
+                "input": usage.get("prompt_tokens", 0),
+                "output": usage.get("completion_tokens", 0),
+            },
+        )
+        return LLMResult(
+            text=content,
+            latency_ms=round((time.time() - start) * 1000),
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            reasoning=reasoning,
+        )
 
 
 def extract_json(text: str) -> Any | None:
@@ -231,9 +248,10 @@ async def chat_json(
     max_tokens: int = 256,
     model: str | None = None,
     abort: asyncio.Event | None = None,
+    name: str = "llm.json",
 ) -> LLMJsonResult:
     """Chat that must return JSON; one repair attempt if the first parse fails."""
-    first = await chat(messages, temperature=temperature, max_tokens=max_tokens, model=model, abort=abort)
+    first = await chat(messages, temperature=temperature, max_tokens=max_tokens, model=model, abort=abort, name=name)
     value = extract_json(first.text)
     if value is not None:
         return LLMJsonResult(value, first.text, first.latency_ms, first.completion_tokens, first.reasoning)
@@ -251,6 +269,7 @@ async def chat_json(
         max_tokens=max_tokens,
         model=model,
         abort=abort,
+        name=f"{name}.repair",
     )
     value = extract_json(repair.text)
     return LLMJsonResult(
@@ -270,6 +289,7 @@ async def chat_stream(
     model: str | None = None,
     abort: asyncio.Event | None = None,
     on_delta=None,
+    name: str = "llm.stream",
 ) -> LLMJsonResult:
     """Streaming chat for the agent turn — surfaces the reasoning model's
     chain-of-thought token-by-token. `on_delta(reasoning_so_far, content_so_far)`
@@ -288,41 +308,50 @@ async def chat_stream(
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {endpoint.api_key}", **endpoint.headers}
     reasoning = ""
     content = ""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
-        async with client.stream("POST", f"{endpoint.base_url}/chat/completions", json=payload, headers=headers) as res:
-            if res.status_code >= 400:
-                body = await res.aread()
-                raise _http_error(endpoint, res.status_code, body.decode("utf-8", "replace"))
-            async for line in res.aiter_lines():
-                if abort is not None and abort.is_set():
-                    raise LLMAborted("run stopped during inference")
-                if not line or not line.startswith("data:"):
-                    continue
-                data = line[len("data:"):].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    obj = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                choice = (obj.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
-                rc = delta.get("reasoning") or delta.get("reasoning_content")
-                c = delta.get("content")
-                changed = False
-                if rc:
-                    reasoning += rc
-                    changed = True
-                if c:
-                    content += c
-                    changed = True
-                if changed and on_delta is not None:
-                    await on_delta(reasoning, content)
-    if not reasoning:
-        reasoning, content = _split_think(content)
-    value = extract_json(content)
-    completion_tokens = max(1, (len(content) + len(reasoning)) // 4)
-    return LLMJsonResult(value, content, round((time.time() - start) * 1000), completion_tokens, reasoning)
+    with tracing.observation(
+        name,
+        as_type="generation",
+        model=resolved_model,
+        input=messages,
+        model_parameters={"temperature": temperature, "max_tokens": max_tokens, "stream": True},
+        metadata={"provider": endpoint.label},
+    ) as gen:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+            async with client.stream("POST", f"{endpoint.base_url}/chat/completions", json=payload, headers=headers) as res:
+                if res.status_code >= 400:
+                    body = await res.aread()
+                    raise _http_error(endpoint, res.status_code, body.decode("utf-8", "replace"))
+                async for line in res.aiter_lines():
+                    if abort is not None and abort.is_set():
+                        raise LLMAborted("run stopped during inference")
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choice = (obj.get("choices") or [{}])[0]
+                    delta = choice.get("delta") or {}
+                    rc = delta.get("reasoning") or delta.get("reasoning_content")
+                    c = delta.get("content")
+                    changed = False
+                    if rc:
+                        reasoning += rc
+                        changed = True
+                    if c:
+                        content += c
+                        changed = True
+                    if changed and on_delta is not None:
+                        await on_delta(reasoning, content)
+        if not reasoning:
+            reasoning, content = _split_think(content)
+        value = extract_json(content)
+        completion_tokens = max(1, (len(content) + len(reasoning)) // 4)
+        gen.update(output=content, usage_details={"output": completion_tokens}, metadata={"reasoning_chars": len(reasoning)})
+        return LLMJsonResult(value, content, round((time.time() - start) * 1000), completion_tokens, reasoning)
 
 
 async def local_llm_health() -> dict[str, Any]:

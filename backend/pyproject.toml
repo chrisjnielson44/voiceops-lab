@@ -14,6 +14,12 @@ dependencies = [
     "alembic>=1.18",
     "sqlalchemy[asyncio]>=2.0",
     "livekit-api>=1.1",
+    # Agent orchestration (StateGraph engine) + LLM observability. langgraph
+    # gives us the typed turn loop, conditional routing, checkpointing and native
+    # human-in-the-loop interrupts; langfuse traces every inference. Both degrade
+    # to no-ops when unconfigured so the local-first runtime still works offline.
+    "langgraph>=1.0",
+    "langfuse>=4.0",
 ]
 
 [project.optional-dependencies]

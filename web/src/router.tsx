@@ -18,6 +18,7 @@ import { ScenariosView } from "@/components/ScenariosView";
 import { VoicesView } from "@/components/VoicesView";
 import { ModelsView } from "@/components/ModelsView";
 import { LogsView } from "@/components/LogsView";
+import { AuditView } from "@/components/AuditView";
 import { TeamView } from "@/components/TeamView";
 import { AuthScreen } from "@/components/AuthScreen";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -44,6 +45,7 @@ const PATH_BY_TAB: Record<TabId, string> = {
   analytics: "/analytics",
   calls: "/calls",
   logs: "/logs",
+  audit: "/audit",
   integrations: "/integrations",
   team: "/team",
   settings: "/settings",
@@ -59,6 +61,7 @@ function tabFromPath(pathname: string): TabId {
   if (pathname.startsWith("/analytics")) return "analytics";
   if (pathname.startsWith("/calls")) return "calls";
   if (pathname.startsWith("/logs")) return "logs";
+  if (pathname.startsWith("/audit")) return "audit";
   if (pathname.startsWith("/integrations")) return "integrations";
   if (pathname.startsWith("/team")) return "team";
   if (pathname.startsWith("/settings")) return "settings";
@@ -196,6 +199,7 @@ const scenariosRoute = createRoute({ getParentRoute: () => rootRoute, path: "/sc
 const voicesRoute = createRoute({ getParentRoute: () => rootRoute, path: "/voices", component: VoicesRoute });
 const modelsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/models", component: ModelsRoute });
 const logsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/logs", component: LogsView });
+const auditRoute = createRoute({ getParentRoute: () => rootRoute, path: "/audit", component: AuditView });
 const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/analytics",
@@ -223,6 +227,7 @@ const routeTree = rootRoute.addChildren([
   analyticsRoute,
   callsRoute,
   logsRoute,
+  auditRoute,
   integrationsRoute,
   teamRoute,
   settingsRoute,

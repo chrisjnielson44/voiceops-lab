@@ -132,7 +132,76 @@ _PRIOR_AUTH_CIGNA = _assemble(
     }
 )
 
-SCENARIOS: list[Scenario] = [_ELIGIBILITY_AETNA, _CLAIM_UHC, _PRIOR_AUTH_CIGNA]
+_CLAIM_ANTHEM_RECON = _assemble(
+    {
+        "id": "claim-anthem-recon",
+        "title": "Denied-claim reconciliation — authorization timing",
+        "payer": "Anthem",
+        "payer_id": "ANT-225",
+        "category": "claim-status",
+        "difficulty": "complex",
+        "outcome": "completed",
+        "objective": "Claim ANT-7741 (MRI brain, CPT 70553) denied for 'authorization not on file'. Reconcile the denial against the member's prior-auth record and set the correct resubmission path — the records may disagree.",
+        "patient": {"name": "Sofia Mendoza", "member_id": "ANT-883-50127", "dob": "1988-12-03"},
+        "provider": {"name": "Cedar Valley Neurology", "npi": "1588204417", "tax_id": "84-2210037"},
+        "claim": {"id": "ANT-7741", "dos": "2026-05-20", "amount": 2890.0, "cpt": "70553"},
+        "baseline_completion_prob": 0.55,
+        "baseline_escalation_risk": 0.24,
+        "required_fields": ["claim_id", "claim_status", "denial_reason", "auth_status", "resubmission_path"],
+        "connect_ms": 2400,
+        "raw_turns": [
+            {"speaker": "ivr", "text": "Anthem provider services. Say 'claims' or 'authorizations'.", "duration_ms": 4200, "intent": "ivr-greeting"},
+            {"speaker": "agent", "text": "Claims.", "duration_ms": 1200, "intent": "ivr-navigate"},
+            {"speaker": "agent", "text": "Running an end-to-end check on the member, this claim, and any related authorization before the rep connects.", "duration_ms": 2000, "tool": {"tool": "investigate", "label": "investigate", "args": {"task": "reconcile denied claim ANT-7741 against prior auth"}, "result": "Member active • claim ANT-7741 DENIED (CARC 197, auth not on file) • auth PA-90233 APPROVED — DISCREPANCY: resubmit, do not appeal", "status": "warn", "latency_ms": 720, "phi": True}, "satisfies": ["claim_id", "claim_status", "auth_status"], "phi": True, "compliance": "Sub-agent cross-checked claim vs. authorization; resubmission recommended over appeal.", "intent": "tool-investigate"},
+            {"speaker": "payer", "text": "Claims, this is Reggie. Member ID, claim number, and date of service?", "duration_ms": 4800, "forecast": "Rep authenticates and asks for claim identifiers.", "forecast_confidence": 0.84, "predict": {"completion_probability": 0.58, "escalation_risk": 0.2, "rationale": "Auth-timing denial — resolvable as a corrected claim if the PA is now approved."}, "intent": "authenticate"},
+            {"speaker": "agent", "text": "Member ANT-883-50127, claim ANT-7741, date of service May twentieth, MRI 70553 billed at twenty-eight ninety.", "duration_ms": 5200, "phi": True, "intent": "claim-context"},
+            {"speaker": "payer", "text": "I see it — denied April, reason code 197, no authorization on file when it adjudicated.", "duration_ms": 5400, "forecast": "Rep confirms the CARC 197 auth denial.", "forecast_confidence": 0.8, "satisfies": ["denial_reason"], "intent": "denial-reason"},
+            {"speaker": "agent", "text": "I show prior auth PA-90233 for that same MRI was approved on May twenty-eighth — eight days after this claim processed. Can it be reprocessed as a corrected claim citing that PA rather than appealed?", "duration_ms": 6400, "intent": "reconcile"},
+            {"speaker": "payer", "text": "Good catch. Yes — submit a corrected claim, frequency 7, with PA-90233 in the auth field. No appeal needed; you're inside timely filing through November twentieth.", "duration_ms": 6200, "forecast": "Rep confirms corrected-claim resubmission citing the approved PA.", "forecast_confidence": 0.78, "predict": {"completion_probability": 0.93, "escalation_risk": 0.05, "rationale": "Discrepancy resolved: approved PA exists; corrected claim is the clean path."}, "satisfies": ["resubmission_path"], "intent": "resolution"},
+            {"speaker": "agent", "text": "Recording the reconciliation and the corrected-claim plan to the billing worklist.", "duration_ms": 1700, "tool": {"tool": "record_status", "label": "record_status", "args": {"action": "corrected_claim", "freq_code": "7", "auth_ref": "PA-90233", "deadline": "2026-11-20"}, "result": "Worklist task created • corrected claim queued with PA-90233", "status": "ok", "latency_ms": 320, "phi": True}, "phi": True, "intent": "tool-record"},
+            {"speaker": "agent", "text": "Summarizing the auth-timing reconciliation and resubmission for the encounter note.", "duration_ms": 1700, "tool": {"tool": "summarize", "label": "summarize", "args": {"claim": "ANT-7741", "outcome": "corrected_claim_with_pa"}, "result": "Summary drafted • 5/5 required fields captured", "status": "ok", "latency_ms": 510, "phi": False}, "predict": {"completion_probability": 0.97, "escalation_risk": 0.03, "rationale": "Reconciliation complete; corrected claim tasked. No escalation."}, "intent": "tool-summarize"},
+            {"speaker": "system", "text": "Call objective met — denial reconciled against approved PA-90233; corrected claim queued (due 2026-11-20).", "duration_ms": 2600, "intent": "complete"},
+        ],
+    }
+)
+
+_CLAIM_HUMANA_APPEAL = _assemble(
+    {
+        "id": "claim-humana-appeal",
+        "title": "Denied claim — retro-auth appeal (escalation)",
+        "payer": "Humana",
+        "payer_id": "HUM-410",
+        "category": "claim-status",
+        "difficulty": "complex",
+        "outcome": "escalated",
+        "objective": "Claim HUM-9920 (knee arthroscopy, CPT 29881) denied for absent precertification. Establish whether any authorization exists; if none, route a retro-authorization appeal with the operative note.",
+        "patient": {"name": "Alicia Romero", "member_id": "HUM-664-10298", "dob": "1965-09-05"},
+        "provider": {"name": "Cedar Valley Orthopedics", "npi": "1730284511", "tax_id": "84-2210037"},
+        "claim": {"id": "HUM-9920", "dos": "2026-03-02", "amount": 1875.5, "cpt": "29881"},
+        "baseline_completion_prob": 0.4,
+        "baseline_escalation_risk": 0.46,
+        "required_fields": ["claim_id", "claim_status", "denial_reason", "auth_status", "appeal_path"],
+        "connect_ms": 2600,
+        "raw_turns": [
+            {"speaker": "ivr", "text": "Humana provider line. Please hold for the next available representative.", "duration_ms": 4400, "intent": "ivr-greeting"},
+            {"speaker": "agent", "text": "Investigating the denial root cause — member coverage, the claim, and any authorization on file.", "duration_ms": 2000, "tool": {"tool": "investigate", "label": "investigate", "args": {"task": "root cause of HUM-9920 precert denial; is any auth on file?"}, "result": "Member active • claim HUM-9920 DENIED (CARC 197, precert absent) • NO prior auth on file → retro-authorization appeal required", "status": "warn", "latency_ms": 690, "phi": True}, "satisfies": ["claim_id", "claim_status", "auth_status"], "phi": True, "compliance": "Sub-agent confirmed no authorization exists; appeal path indicated.", "intent": "tool-investigate"},
+            {"speaker": "payer", "text": "Provider claims, this is Tara. What claim are we looking at?", "duration_ms": 4400, "forecast": "Rep connects and asks for the claim.", "forecast_confidence": 0.83, "predict": {"completion_probability": 0.42, "escalation_risk": 0.44, "rationale": "Absent-precert denial with no auth on file — likely a retro-auth appeal beyond autonomous scope."}, "intent": "authenticate"},
+            {"speaker": "agent", "text": "Claim HUM-9920 for member HUM-664-10298, knee arthroscopy 29881, date of service March second, denied reason code 197.", "duration_ms": 5400, "phi": True, "satisfies": ["denial_reason"], "intent": "claim-context"},
+            {"speaker": "payer", "text": "Correct — denied for no precertification. There's no auth on file for that procedure. This one needs a retro-auth appeal with the op note; I can't reverse it here.", "duration_ms": 6400, "forecast": "Rep confirms no auth and that a retro-auth appeal is required.", "forecast_confidence": 0.74, "predict": {"completion_probability": 0.3, "escalation_risk": 0.82, "rationale": "Requires a retro-authorization appeal with clinical documentation — human review."}, "satisfies": ["appeal_path"], "intent": "escalation-trigger"},
+            {"speaker": "agent", "text": "Understood — escalation criteria met. Routing a retro-authorization appeal packet with the operative note to the specialist queue.", "duration_ms": 2000, "tool": {"tool": "escalate", "label": "escalate", "args": {"reason": "retro_auth_appeal", "claim": "HUM-9920", "needs": "operative_note", "priority": "high"}, "result": "Escalation packet created • routed to appeals queue", "status": "ok", "latency_ms": 360, "phi": True}, "phi": True, "compliance": "Escalation includes PHI summary — recipient queue must be access-controlled.", "predict": {"completion_probability": 0.28, "escalation_risk": 0.9, "rationale": "Hand-off created; outcome depends on the appeal review."}, "intent": "tool-escalate"},
+            {"speaker": "agent", "text": "Summarizing the denial and the retro-auth appeal hand-off.", "duration_ms": 1700, "tool": {"tool": "summarize", "label": "summarize", "args": {"claim": "HUM-9920", "outcome": "escalated_retro_auth_appeal"}, "result": "Summary drafted • 5/5 required fields captured (appeal pending)", "status": "warn", "latency_ms": 540, "phi": False}, "intent": "tool-summarize"},
+            {"speaker": "system", "text": "Call escalated — no auth on file; retro-authorization appeal packet queued with operative-note request.", "duration_ms": 2800, "intent": "escalate"},
+        ],
+    }
+)
+
+SCENARIOS: list[Scenario] = [
+    _ELIGIBILITY_AETNA,
+    _CLAIM_UHC,
+    _PRIOR_AUTH_CIGNA,
+    _CLAIM_ANTHEM_RECON,
+    _CLAIM_HUMANA_APPEAL,
+]
 DEFAULT_SCENARIO_ID = _ELIGIBILITY_AETNA.id
 
 

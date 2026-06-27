@@ -80,7 +80,15 @@ export function Message({
   );
 }
 
-/** Streaming-tolerant text renderer (markdown-lite: preserves line breaks). */
-export function Response({ children }: { children: string }) {
-  return <div className="whitespace-pre-wrap break-words">{children}</div>;
+/** Streaming-tolerant text renderer (markdown-lite: preserves line breaks).
+ *  When `streaming`, a blinking caret trails the revealed text. */
+export function Response({ children, streaming }: { children: string; streaming?: boolean }) {
+  return (
+    <div className="whitespace-pre-wrap break-words">
+      {children}
+      {streaming && (
+        <span className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-current align-baseline" aria-hidden />
+      )}
+    </div>
+  );
 }

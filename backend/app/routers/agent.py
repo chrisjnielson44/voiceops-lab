@@ -14,8 +14,8 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from app.agent.dispatch import run_call
 from app.agent.live_bridge import get_or_create_bridge
-from app.agent.orchestrator import run_orchestrator
 from app.agent.run_store import STREAM_END, create_run, get_run, subscribe, unsubscribe
 from app.db import query_one
 from app.llm.local_llm import local_model_id
@@ -68,7 +68,8 @@ async def start(request: Request, user_id: str = Depends(require_user)):
         human_payer=human_payer,
     )
     # Fire-and-forget; the loop streams via SSE and persists on completion.
-    run.task = asyncio.create_task(run_orchestrator(run))
+    # run_call opens the trace and selects the engine (legacy / langgraph).
+    run.task = asyncio.create_task(run_call(run))
 
     return {"runId": run.id, "model": model, "scenarioId": scenario_id, "humanPayer": human_payer}
 
@@ -257,6 +258,26 @@ async def say(request: Request, _user: str = Depends(require_user)):
 
     run.payer_inbox.put_nowait(text.strip())
     return {"ok": True}
+
+
+@router.post("/approve")
+async def approve(request: Request, _user: str = Depends(require_user)):
+    """Resolve a pending sensitive-tool approval interrupt (langgraph engine).
+    Body: {runId, approved: bool, args?: object}. The graph driver is blocked on
+    the run's approval_inbox; this hands it the human's decision so the tool node
+    resumes (executes, executes with edited args, or is declined)."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    run = get_run(body.get("runId")) if isinstance(body.get("runId"), str) else None
+    if not run:
+        raise HTTPException(status_code=404, detail="run not found")
+    approved = bool(body.get("approved"))
+    args = body.get("args") if isinstance(body.get("args"), dict) else None
+    run.approval_inbox.put_nowait({"approved": approved, "args": args})
+    return {"ok": True, "approved": approved}
 
 
 @router.post("/control")
