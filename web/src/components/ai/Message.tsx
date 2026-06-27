@@ -80,8 +80,8 @@ export function Message({
   );
 }
 
-/** Streaming-tolerant text renderer (markdown-lite: preserves line breaks).
- *  When `streaming`, a blinking caret trails the revealed text. */
+/** AI Elements-style streaming text renderer (markdown-lite: preserves line breaks).
+ *  When `streaming`, a blinking caret trails the current text fragment. */
 export function Response({ children, streaming }: { children: string; streaming?: boolean }) {
   return (
     <div className="whitespace-pre-wrap break-words">

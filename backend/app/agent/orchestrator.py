@@ -28,7 +28,7 @@ from app.config import settings
 from app.core.format import clamp, format_time_of_day, now_ms
 from app.core.hash import GENESIS_HASH, chain_hash
 from app.db import query
-from app.llm.local_llm import LLMAborted, chat_json, chat_stream, local_model_id
+from app.llm.local_llm import LLMAborted, chat_json, chat_stream, extract_speak_text_fragment, local_model_id
 from app.packs.registry import get_scenario, pack_for_scenario
 from app.schemas import agent as ev
 from app.schemas.agent import LiveReasoning, LiveTool, LiveTurn, PrefetchRecord, RunMetrics, Subgraph
@@ -136,6 +136,20 @@ async def run_orchestrator(run: RunState) -> None:
             latency_ms=latency_ms, grounded=grounded, anticipated=anticipated,
         )
         seq += 1
+        emit(run, ev.turn_event(turn))
+
+    def stream_agent_turn(text: str, ctx_str: str) -> None:
+        grounded_n = sum(1 for ln in ctx_str.splitlines() if ln.strip()) if ctx_str else 0
+        turn = LiveTurn(
+            id=f"t-{seq}",
+            seq=seq,
+            speaker="agent",
+            text=text,
+            at_ms=now(),
+            grounded=grounded_n or None,
+            anticipated=len(warmed_intents_now()) or None,
+            streaming=True,
+        )
         emit(run, ev.turn_event(turn))
 
     def push_metrics() -> None:
@@ -419,19 +433,27 @@ async def run_orchestrator(run: RunState) -> None:
             started_ms = now()
             # Show the graph walk + weighed predictions immediately (before any token).
             emit_reasoning(subgraph, started_ms=started_ms, think_text="", streaming=True)
-            emit_state = {"len": 0}
+            emit_state = {"reasoning_len": 0, "speech_len": 0}
 
             async def on_delta(
                 reasoning_text: str,
-                _content: str,
+                content: str,
                 *,
                 state: dict[str, int] = emit_state,
                 active_subgraph: Subgraph | None = subgraph,
                 active_started_ms: int = started_ms,
+                active_ctx_str: str = ctx_str,
             ) -> None:
-                if len(reasoning_text) - state["len"] >= 64:
-                    state["len"] = len(reasoning_text)
+                if len(reasoning_text) - state["reasoning_len"] >= 64:
+                    state["reasoning_len"] = len(reasoning_text)
                     emit_reasoning(active_subgraph, started_ms=active_started_ms, think_text=reasoning_text, streaming=True)
+                speech = extract_speak_text_fragment(content)
+                if speech is None:
+                    return
+                text, complete = speech
+                if text and (complete or len(text) - state["speech_len"] >= 8):
+                    state["speech_len"] = len(text)
+                    stream_agent_turn(text, active_ctx_str)
 
             dec = await chat_stream(
                 prompt_msgs,

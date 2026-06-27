@@ -208,11 +208,18 @@ export function StudioTranscript({
   // (Read mode) — replays and finished calls render instantly.
   const live = status === "active" || status === "dialing";
   const lastFeed = visible[visible.length - 1];
-  const streamTurn =
+  const activeTurn =
     revealCount == null && live && lastFeed?.kind === "turn" && (lastFeed.turn.speaker === "agent" || lastFeed.turn.speaker === "ivr")
       ? lastFeed.turn
       : null;
-  const revealed = useTypewriter(streamTurn?.text ?? "", streamTurn?.id ?? null);
+  const streamedTurnIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const it of visible) {
+      if (it.kind === "turn" && it.turn.streaming) streamedTurnIdsRef.current.add(it.turn.id);
+    }
+  }, [visible]);
+  const typewriterTurn = activeTurn && !activeTurn.streaming && !streamedTurnIdsRef.current.has(activeTurn.id) ? activeTurn : null;
+  const revealed = useTypewriter(typewriterTurn?.text ?? "", typewriterTurn?.id ?? null);
 
   // Derive a live activity label from who spoke last among VISIBLE turns.
   let thinkingLabel = "Agent is working";
@@ -246,6 +253,8 @@ export function StudioTranscript({
   const streamSig =
     lastItem && lastItem.kind === "reasoning"
       ? lastItem.reasoning.segments.reduce((a, s) => a + s.text.length, 0)
+      : lastItem && lastItem.kind === "turn" && lastItem.turn.streaming
+        ? lastItem.turn.text.length
       : 0;
   const showThinking = thinking && caughtUp;
   const groups = groupFeed(visible);
@@ -273,8 +282,8 @@ export function StudioTranscript({
                   atMs={g.turn.atMs}
                   chips={agentSide ? <TurnChips turn={g.turn} tools={g.tools} /> : undefined}
                 >
-                  <Response streaming={streamTurn?.id === g.turn.id}>
-                    {streamTurn?.id === g.turn.id ? revealed : g.turn.text}
+                  <Response streaming={!!g.turn.streaming || typewriterTurn?.id === g.turn.id}>
+                    {g.turn.streaming ? g.turn.text : typewriterTurn?.id === g.turn.id ? revealed : g.turn.text}
                   </Response>
                 </Message>
               </div>

@@ -1,7 +1,7 @@
 """Balanced-brace JSON extraction, ported from `extractJson` in localLLM.ts."""
 from __future__ import annotations
 
-from app.llm.local_llm import extract_json
+from app.llm.local_llm import extract_json, extract_speak_text_fragment
 
 
 def test_extracts_plain_object():
@@ -28,3 +28,12 @@ def test_returns_none_on_garbage():
 
 def test_returns_none_on_unbalanced():
     assert extract_json('{"a": 1') is None
+
+
+def test_extracts_streaming_speak_text_fragment():
+    assert extract_speak_text_fragment('{"action":"speak","text":"Hello payer') == ("Hello payer", False)
+    assert extract_speak_text_fragment('{"action":"speak","text":"Hello\\nthere"}') == ("Hello\nthere", True)
+
+
+def test_ignores_non_speak_streaming_actions():
+    assert extract_speak_text_fragment('{"action":"tool","text":"not spoken') is None
