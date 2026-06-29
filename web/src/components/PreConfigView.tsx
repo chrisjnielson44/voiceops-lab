@@ -28,6 +28,7 @@ import { Slider } from "@/components/ui/slider";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { CollapsibleContent } from "@/components/ui/collapsible";
 import { cn } from "@/lib/cn";
+import type { VoiceRuntimeId, VoiceRuntimeStatus } from "@/lib/voice/types";
 
 export interface ScenarioOpt { id: string; title: string; payer: string; category: string; objective: string; requiredFields: string[]; }
 export interface VoiceOpt { id: string; name: string; category: string; }
@@ -36,7 +37,8 @@ export interface VoiceOptions {
   scenarios: ScenarioOpt[];
   voices: VoiceOpt[];
   models: ModelOpt[];
-  defaults: { scenarioId: string; model: string; fastModel?: string; voiceId: string | null; temperature: number };
+  runtimes?: VoiceRuntimeStatus[];
+  defaults: { scenarioId: string; model: string; fastModel?: string; voiceId: string | null; runtime?: VoiceRuntimeId; temperature: number };
   speechProvider: string | null;
 }
 
@@ -59,6 +61,8 @@ export function PreConfigView({
   onModel,
   voiceId,
   onVoice,
+  runtime = "livekit",
+  onRuntime,
   temperature,
   onTemperature,
   instructions,
@@ -82,6 +86,8 @@ export function PreConfigView({
   onModel: (id: string) => void;
   voiceId: string;
   onVoice: (id: string) => void;
+  runtime?: VoiceRuntimeId;
+  onRuntime?: (id: VoiceRuntimeId) => void;
   temperature: number;
   onTemperature: (t: number) => void;
   instructions: string;
@@ -100,6 +106,7 @@ export function PreConfigView({
   const [showAllScenarios, setShowAllScenarios] = useState(false);
   const MOBILE_SCENARIO_LIMIT = 3;
   const selectedModel = options?.models.find((m) => m.id === model);
+  const selectedRuntime = (options?.runtimes ?? []).find((r) => r.id === runtime);
   const ready = !!scenarioId && !!model;
   const scenarioList = options?.scenarios ?? [];
   const hiddenScenarioCount = Math.max(0, scenarioList.length - MOBILE_SCENARIO_LIMIT);
@@ -144,10 +151,36 @@ export function PreConfigView({
               onClick={() => onTransport?.("voice")}
               icon={<Mic className="h-4 w-4" />}
               title="Voice call"
-              desc="Speak as the rep over a real LiveKit call. Needs a speech provider + worker — and uses ElevenLabs credits. Text role-play uses none."
+              desc="Speak as the rep over the selected realtime runtime. Text role-play uses none."
             />
           </div>
+          {(options?.runtimes?.length ?? 0) > 0 && (
+            <RuntimePicker
+              runtimes={options?.runtimes ?? []}
+              runtime={runtime}
+              selectedRuntime={selectedRuntime}
+              muted={transport !== "voice"}
+              note={
+                transport !== "voice"
+                  ? "Runtime is used when you choose Voice call. Text role-play runs through the backend text loop."
+                  : null
+              }
+              onRuntime={onRuntime}
+            />
+          )}
           <RoleCard scenarioId={scenarioId} />
+        </section>
+      )}
+
+      {mode === "simulate" && (options?.runtimes?.length ?? 0) > 0 && (
+        <section className="flex flex-col gap-3">
+          <RuntimePicker
+            runtimes={options?.runtimes ?? []}
+            runtime={runtime}
+            selectedRuntime={selectedRuntime}
+            note="Simulation still runs the backend agent loop; this selects the preferred voice runtime for realtime voice sessions and keeps the setup consistent."
+            onRuntime={onRuntime}
+          />
         </section>
       )}
 
@@ -332,6 +365,78 @@ function TransportCard({ active, onClick, icon, title, desc }: { active: boolean
           <p className="text-sm font-semibold text-foreground">{title}</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{desc}</p>
         </div>
+      </Card>
+    </button>
+  );
+}
+
+function RuntimePicker({
+  runtimes,
+  runtime,
+  selectedRuntime,
+  muted = false,
+  note,
+  onRuntime,
+}: {
+  runtimes: VoiceRuntimeStatus[];
+  runtime: VoiceRuntimeId;
+  selectedRuntime: VoiceRuntimeStatus | undefined;
+  muted?: boolean;
+  note?: string | null;
+  onRuntime?: (id: VoiceRuntimeId) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>Runtime</SectionLabel>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {runtimes.map((r) => (
+          <RuntimeCard
+            key={r.id}
+            runtime={r}
+            active={runtime === r.id}
+            muted={muted}
+            onClick={() => onRuntime?.(r.id)}
+          />
+        ))}
+      </div>
+      {note ? (
+        <p className="text-[11px] text-muted-foreground">{note}</p>
+      ) : selectedRuntime && !selectedRuntime.configured ? (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          {selectedRuntime.label} is selectable, but launch needs {selectedRuntime.missingEnv.join(" or ")}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function RuntimeCard({
+  runtime,
+  active,
+  muted = false,
+  onClick,
+}: {
+  runtime: VoiceRuntimeStatus;
+  active: boolean;
+  muted?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} className="text-left">
+      <Card
+        className={cn(
+          "flex h-full flex-col gap-2 p-4 transition-all",
+          active ? "border-brand-500 ring-2 ring-brand-500 ring-offset-1 ring-offset-background dark:bg-brand-500/10" : "hover:border-foreground/20",
+          muted && "opacity-70",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-foreground">{runtime.label}</span>
+          <StatusChip tone={runtime.configured ? "green" : "slate"} dot>
+            {runtime.configured ? "configured" : "stub"}
+          </StatusChip>
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">{runtime.detail}</p>
       </Card>
     </button>
   );

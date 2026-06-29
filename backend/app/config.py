@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=(".env", ".env.local"), extra="ignore")
+    model_config = SettingsConfigDict(env_file=(".env", ".env.local", "../web/.env.local", "../.env.local"), extra="ignore")
 
     # --- Database (Neon Postgres). Prefer the UNPOOLED/direct URL. ----------
     database_url_unpooled: str | None = None
@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # --- Voice / telephony ---------------------------------------------------
     elevenlabs_api_key: str | None = None
     elevenlabs_voice_id: str | None = None
+    # Vercel AI Gateway / Voice runtime. OIDC is preferred on Vercel-linked
+    # deployments; AI_GATEWAY_API_KEY keeps local/manual setups possible.
+    vercel_oidc_token: str | None = None
+    ai_gateway_api_key: str | None = None
+    vercel_voice_model: str = "openai/gpt-realtime-2"
     # LiveKit (browser/WebRTC voice). The SPA gets a short-lived room token from
     # /api/voice/token; the agent worker joins the same room.
     livekit_url: str | None = None

@@ -40,6 +40,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // Order matters: the more specific /api/auth prefix is matched first.
         "/api/auth": { target: AUTH, changeOrigin: true },
+        "/api/realtime": { target: AUTH, changeOrigin: true },
         "/api": { target: API, changeOrigin: true },
       },
     },

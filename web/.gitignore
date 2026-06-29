@@ -6,3 +6,4 @@ design-preview/
 *.tsbuildinfo
 .vite/
 .vercel
+.env*.local

@@ -14,6 +14,17 @@ export interface VoiceProviderStatus {
   detail: string;
 }
 
+export type VoiceRuntimeId = "livekit" | "vercel";
+
+export interface VoiceRuntimeStatus {
+  id: VoiceRuntimeId;
+  label: string;
+  configured: boolean;
+  missingEnv: string[];
+  detail: string;
+  default?: boolean;
+}
+
 export type TelephonyVendor = "livekit" | "twilio";
 
 export interface TelephonyStatus {

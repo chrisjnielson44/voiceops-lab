@@ -37,3 +37,17 @@ async def test_demo_model_routes_to_demo_without_fallback():
     result = await route_chat(_req("demo/voiceops-sim-1"))
     assert result.routed_to == "demo"
     assert result.fell_back is False
+
+
+async def test_voice_options_expose_vercel_runtime(monkeypatch):
+    from app.config import settings
+    from app.routers.voice import _runtime_options
+
+    monkeypatch.setattr(settings, "vercel_oidc_token", "", raising=False)
+    monkeypatch.setattr(settings, "ai_gateway_api_key", "", raising=False)
+    runtimes = {r.id: r for r in _runtime_options()}
+
+    assert runtimes["livekit"].default is True
+    assert runtimes["vercel"].label == "Vercel Voice"
+    assert runtimes["vercel"].configured is False
+    assert "VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY" in runtimes["vercel"].missing_env

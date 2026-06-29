@@ -1,13 +1,23 @@
-export type ProviderLogoId = "livekit" | "twilio" | "elevenlabs" | "openrouter" | "mlx";
+export type ProviderLogoId = "livekit" | "twilio" | "elevenlabs" | "vercel" | "openrouter" | "mlx";
 
 export function ProviderLogo({ id, size = 28 }: { id: ProviderLogoId; size?: number }) {
   switch (id) {
     case "twilio": return <TwilioMark size={size} />;
     case "livekit": return <LiveKitMark size={size} />;
     case "elevenlabs": return <ElevenLabsMark size={size} />;
+    case "vercel": return <VercelMark size={size} />;
     case "openrouter": return <OpenRouterMark size={size} />;
     case "mlx": return <MLXMark size={size} />;
   }
+}
+
+function VercelMark({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" aria-label="Vercel">
+      <rect width="100" height="100" rx="22" fill="#000000" />
+      <path d="M50 22 82 78H18L50 22Z" fill="white" />
+    </svg>
+  );
 }
 
 function TwilioMark({ size }: { size: number }) {

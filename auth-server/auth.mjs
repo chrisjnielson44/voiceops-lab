@@ -13,7 +13,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 // Load env from this package's .env, then fall back to the repo-root .env.local
 // (the canonical creds file). First definition wins.
-for (const f of [path.join(here, ".env"), path.join(here, "..", ".env.local"), path.join(here, "..", ".env")]) {
+for (const f of [
+  path.join(here, ".env"),
+  path.join(here, "..", "web", ".env.local"),
+  path.join(here, "..", ".env.local"),
+  path.join(here, "..", ".env"),
+]) {
   try {
     for (const line of readFileSync(f, "utf8").split("\n")) {
       const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
