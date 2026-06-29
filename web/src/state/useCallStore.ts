@@ -43,6 +43,7 @@ export interface LiveInfo {
   token: string;
   room: string;
   runId: string;
+  runtime?: "livekit" | "vercel";
 }
 
 interface CallState {

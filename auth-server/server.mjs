@@ -4,12 +4,14 @@
 // same-origin and no cross-domain plugin/CORS is needed; the CORS headers below
 // are a safety net for a direct (non-proxied) cross-origin setup.
 import { createServer } from "node:http";
+import { createGateway } from "@ai-sdk/gateway";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.mjs";
 import { provisionUser } from "./provision.mjs";
 
 const PORT = Number(process.env.AUTH_PORT || 3000);
 const handler = toNodeHandler(auth);
+const aiGateway = createGateway();
 
 function nodeHeaders(req) {
   const h = new Headers();
@@ -82,6 +84,31 @@ async function handleProvisionUser(req, res) {
   }
 }
 
+async function handleRealtimeToken(req, res) {
+  if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
+  if (!process.env.VERCEL_OIDC_TOKEN && !process.env.AI_GATEWAY_API_KEY) {
+    return sendJson(res, 503, {
+      error: "Vercel AI Gateway credentials are missing. Run `vercel env pull web/.env.local --yes`.",
+    });
+  }
+
+  let payload;
+  try {
+    payload = await readJson(req);
+  } catch {
+    payload = {};
+  }
+  const requested = typeof payload.model === "string" && payload.model ? payload.model : undefined;
+  const model = requested || process.env.VERCEL_VOICE_MODEL || "openai/gpt-realtime-2";
+
+  try {
+    const { token, url } = await aiGateway.experimental_realtime.getToken({ model });
+    return sendJson(res, 200, { token, url, model, tools: [] });
+  } catch (e) {
+    return sendJson(res, 502, { error: e?.message || "failed to mint realtime token" });
+  }
+}
+
 const ALLOW = (
   process.env.AUTH_CORS_ORIGINS ||
   "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
@@ -107,6 +134,12 @@ const server = createServer((req, res) => {
   // Custom admin route (must be checked before the catch-all Better Auth handler).
   if (req.url && req.url.split("?")[0] === "/api/auth/provision-user") {
     handleProvisionUser(req, res).catch(() => {
+      if (!res.writableEnded) sendJson(res, 500, { error: "internal error" });
+    });
+    return;
+  }
+  if (req.url && req.url.split("?")[0] === "/api/realtime/token") {
+    handleRealtimeToken(req, res).catch(() => {
       if (!res.writableEnded) sendJson(res, 500, { error: "internal error" });
     });
     return;

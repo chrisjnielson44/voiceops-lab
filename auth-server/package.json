@@ -11,7 +11,9 @@
     "seed:admin": "node seed-admin.mjs"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "^4.0.0-canary.107",
     "@better-auth/infra": "^0.3.3",
+    "ai": "^7.0.0-canary.176",
     "better-auth": "^1.6.22",
     "pg": "^8.22.0"
   }

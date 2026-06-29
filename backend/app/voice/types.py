@@ -7,6 +7,7 @@ from app.config import settings
 from app.schemas import CamelModel
 
 TelephonyVendor = Literal["livekit", "twilio"]
+VoiceRuntimeId = Literal["livekit", "vercel"]
 
 
 class VoiceProviderStatus(CamelModel):
@@ -26,6 +27,15 @@ class TelephonyStatus(CamelModel):
     missing_env: list[str]
     demo_mode: bool
     detail: str
+
+
+class VoiceRuntimeStatus(CamelModel):
+    id: VoiceRuntimeId
+    label: str
+    configured: bool
+    missing_env: list[str]
+    detail: str
+    default: bool = False
 
 
 class PlaceCallRequest(CamelModel):

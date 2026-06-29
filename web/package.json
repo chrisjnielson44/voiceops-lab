@@ -16,6 +16,8 @@
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {
+    "@ai-sdk/gateway": "^4.0.0-canary.107",
+    "@ai-sdk/react": "^4.0.0-canary.180",
     "@livekit/components-react": "^2.9.21",
     "@livekit/components-styles": "^1.2.0",
     "@lobehub/icons": "^5.10.0",
@@ -36,6 +38,7 @@
     "@sentry/react": "^10.62.0",
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-router": "^1.170.16",
+    "ai": "^7.0.0-canary.176",
     "better-auth": "^1.6.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

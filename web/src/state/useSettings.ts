@@ -15,6 +15,7 @@ export type SettingsTab =
 export interface PlaygroundDefaults {
   model: string;
   voiceId: string;
+  runtime: "livekit" | "vercel";
   scenarioId: string;
   temperature: number;
 }

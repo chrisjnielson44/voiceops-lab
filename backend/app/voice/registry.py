@@ -4,8 +4,9 @@ from __future__ import annotations
 from app.voice.elevenlabs import elevenlabs_provider
 from app.voice.livekit import livekit_telephony
 from app.voice.twilio import twilio_telephony
+from app.voice.vercel import vercel_voice_provider
 
-voice_providers = [elevenlabs_provider]
+voice_providers = [elevenlabs_provider, vercel_voice_provider]
 telephony_providers = [livekit_telephony, twilio_telephony]
 
 

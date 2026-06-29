@@ -24,6 +24,7 @@ from app.db import query
 from app.packs.registry import all_scenarios, default_scenario_id, get_scenario, pack_for_scenario
 from app.providers.registry import MODELS
 from app.routers._deps import require_internal, require_user
+from app.voice.types import VoiceRuntimeId, VoiceRuntimeStatus
 
 router = APIRouter(prefix="/api/voice", tags=["voice"], dependencies=[Depends(require_internal)])
 
@@ -32,6 +33,38 @@ _DEFAULT_VOICES = [
     {"id": "JBFqnCBsd6RMkjVDRZzb", "name": "George", "category": "professional"},
     {"id": "pqHfZKP75CvOlQylNhV4", "name": "Bill", "category": "professional"},
 ]
+
+
+def _runtime_options() -> list[VoiceRuntimeStatus]:
+    livekit_missing = [
+        name
+        for name, value in (
+            ("LIVEKIT_URL", settings.livekit_url),
+            ("LIVEKIT_API_KEY", settings.livekit_api_key),
+            ("LIVEKIT_API_SECRET", settings.livekit_api_secret),
+        )
+        if not value
+    ]
+    vercel_configured = bool(
+        (settings.vercel_oidc_token or "").strip() or (settings.ai_gateway_api_key or "").strip()
+    )
+    return [
+        VoiceRuntimeStatus(
+            id="livekit",
+            label="LiveKit",
+            configured=not livekit_missing,
+            missing_env=livekit_missing,
+            detail="Browser/WebRTC room plus the Python LiveKit worker.",
+            default=True,
+        ),
+        VoiceRuntimeStatus(
+            id="vercel",
+            label="Vercel Voice",
+            configured=vercel_configured,
+            missing_env=[] if vercel_configured else ["VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY"],
+            detail=f"Vercel AI Gateway realtime voice ({settings.vercel_voice_model}).",
+        ),
+    ]
 
 
 async def _elevenlabs_voices() -> list[dict]:
@@ -170,12 +203,14 @@ async def options(_user: str = Depends(require_user)):
         ],
         "voices": voices,
         "models": models,
+        "runtimes": [r.to_wire() for r in _runtime_options()],
         "defaults": {
             "scenarioId": default_scenario_id(),
             "model": _default_model(models),
             # Live voice defaults to this (fast); Simulate uses `model` (reasoning).
             "fastModel": _fast_model(models),
             "voiceId": voices[0]["id"] if voices else None,
+            "runtime": "livekit",
             "temperature": 0.4,
         },
         "speechProvider": "elevenlabs" if (settings.elevenlabs_api_key or "").strip() else None,
@@ -217,15 +252,24 @@ async def tts(request: Request, _user: str = Depends(require_user)):
 
 @router.post("/token")
 async def token(request: Request, user_id: str = Depends(require_user)):
-    if not (settings.livekit_url and settings.livekit_api_key and settings.livekit_api_secret):
-        raise HTTPException(status_code=503, detail="LiveKit is not configured on the server")
-
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
     if not isinstance(body, dict):
         body = {}
+
+    runtime: VoiceRuntimeId = "livekit"
+    if body.get("runtime") == "vercel":
+        runtime = "vercel"
+
+    if runtime == "vercel":
+        raise HTTPException(
+            status_code=501,
+            detail="Vercel Voice runtime is selectable, but realtime session launch is not wired yet.",
+        )
+    if not (settings.livekit_url and settings.livekit_api_key and settings.livekit_api_secret):
+        raise HTTPException(status_code=503, detail="LiveKit is not configured on the server")
 
     scenario = get_scenario(body.get("scenarioId") if isinstance(body.get("scenarioId"), str) else default_scenario_id())
     model = body.get("model") if isinstance(body.get("model"), str) and body.get("model") else settings.local_llm_model
@@ -238,6 +282,7 @@ async def token(request: Request, user_id: str = Depends(require_user)):
         "runId": run_id,
         "scenarioId": scenario.id,
         "model": model,
+        "runtime": runtime,
         "voiceId": body.get("voiceId") if isinstance(body.get("voiceId"), str) else None,
         "instructions": body.get("instructions") if isinstance(body.get("instructions"), str) else None,
         "temperature": body.get("temperature") if isinstance(body.get("temperature"), (int, float)) else 0.4,

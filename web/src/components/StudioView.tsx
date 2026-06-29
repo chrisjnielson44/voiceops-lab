@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -11,6 +11,7 @@ import {
   useVoiceAssistant,
   useConnectionState,
 } from "@livekit/components-react";
+import { experimental_useRealtime as useRealtime } from "@ai-sdk/react";
 import { ConnectionState } from "livekit-client";
 import "@livekit/components-styles";
 import {
@@ -20,6 +21,7 @@ import {
   Layers,
   Lock,
   MessageSquareText,
+  Mic,
   Network,
   Pause,
   PhoneOff,
@@ -60,6 +62,8 @@ import { RoleCard } from "@/components/RoleCard";
 import { cn } from "@/lib/cn";
 import { formatClock, formatPercent } from "@/lib/format";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { VoiceRuntimeId } from "@/lib/voice/types";
+import { vercelRealtimeModel } from "@/lib/voice/vercelRealtime";
 
 
 const STATUS_META: Record<CallStatus, { tone: Tone; label: string; pulse?: boolean }> = {
@@ -176,6 +180,7 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   const endSession = useCallStore((s) => s.endSession);
 
   const playgroundDefaults = useSettings((s) => s.playgroundDefaults);
+  const setPlaygroundDefaults = useSettings((s) => s.setPlaygroundDefaults);
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { runId?: string };
 
@@ -209,6 +214,7 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
 
   // Live-only config (kept local; the live token + session flags use the store).
   const [voiceId, setVoiceId] = useState("");
+  const [voiceRuntime, setVoiceRuntime] = useState<VoiceRuntimeId>("livekit");
   const [temperature, setTemperature] = useState(0.4);
   const [instructions, setInstructions] = useState("");
   const [promptDirty, setPromptDirty] = useState(false);
@@ -253,6 +259,7 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   useEffect(() => {
     if (!options) return;
     setVoiceId((v) => v || playgroundDefaults.voiceId || options.defaults.voiceId || options.voices[0]?.id || "");
+    setVoiceRuntime((v) => playgroundDefaults.runtime || options.defaults.runtime || v);
     setTemperature((t) => t || playgroundDefaults.temperature || options.defaults.temperature);
     // Don't reseed the scenario while a session is active/restored — that would
     // wipe the run the user came back to.
@@ -283,24 +290,32 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
   const liveStreamRef = useRef<string | null>(null);
   useEffect(() => {
     const rid = sessionMode === "live" && inSession && !replay ? liveInfo?.runId : undefined;
-    if (rid && liveStreamRef.current !== rid) {
+    if (rid && liveInfo?.runtime !== "vercel" && liveStreamRef.current !== rid) {
       liveStreamRef.current = rid;
       attachLiveStream(rid);
     }
     if (!inSession) liveStreamRef.current = null;
-  }, [sessionMode, inSession, replay, liveInfo?.runId, attachLiveStream]);
+  }, [sessionMode, inSession, replay, liveInfo?.runId, liveInfo?.runtime, attachLiveStream]);
 
   const startLive = async (): Promise<boolean> => {
     setLiveError(null);
+    if (voiceRuntime === "vercel") {
+      const runId = `vercel_${Date.now().toString(16)}`;
+      setLiveInfo({ url: "", token: "", room: runId, runId, runtime: "vercel" });
+      applyEvent({ kind: "status", status: "active", phase: 0, elapsedMs: 0 });
+      return true;
+    }
     try {
       const res = await fetch("/api/voice/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId, model, voiceId, instructions, temperature }),
+        body: JSON.stringify({ scenarioId, model, voiceId, runtime: voiceRuntime, instructions, temperature }),
       });
       if (res.status === 503) { setLiveError("LiveKit is not configured on the server."); return false; }
+      if (res.status === 501) { setLiveError("Vercel Voice is selectable, but realtime launch is not wired in this build yet."); return false; }
       if (!res.ok) { setLiveError(`Failed to start (${res.status}).`); return false; }
-      setLiveInfo((await res.json()) as LiveInfo);
+      const info = (await res.json()) as LiveInfo;
+      setLiveInfo({ ...info, runtime: "livekit" });
       return true;
     } catch (e) {
       setLiveError(e instanceof Error ? e.message : "Failed to start session.");
@@ -347,6 +362,8 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
         onModel={(id) => { selectModel(id); setModelDirty(true); }}
         voiceId={voiceId}
         onVoice={setVoiceId}
+        runtime={voiceRuntime}
+        onRuntime={(id) => { setVoiceRuntime(id); setPlaygroundDefaults({ runtime: id }); }}
         temperature={temperature}
         onTemperature={setTemperature}
         instructions={instructions}
@@ -402,6 +419,14 @@ export function StudioView({ initialMode }: { initialMode?: StudioMode } = {}) {
           </div>
         )}
       </div>
+    ) : liveInfo?.runtime === "vercel" ? (
+      <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+        <VercelRealtimeStage
+          instructions={instructions}
+          onEnd={newSession}
+          onError={setLiveError}
+        />
+      </Card>
     ) : liveInfo ? (
       <Card className="flex h-full min-h-0 flex-col overflow-hidden">
         <LiveKitRoom
@@ -851,6 +876,136 @@ function LiveStage({ onEnd }: { onEnd: () => void }) {
       </div>
     </>
   );
+}
+
+function VercelRealtimeStage({
+  instructions,
+  onEnd,
+  onError,
+}: {
+  instructions: string;
+  onEnd: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const realtimeModel = useMemo(() => vercelRealtimeModel(), []);
+  const realtime = useRealtime({
+    model: realtimeModel,
+    api: { token: "/api/realtime/token" },
+    sessionConfig: {
+      instructions,
+      voice: "alloy",
+      outputModalities: ["audio", "text"],
+      inputAudioTranscription: { model: "whisper-1" },
+      outputAudioTranscription: {},
+      turnDetection: { type: "server-vad" },
+    },
+    onError: (err) => onError(err.message),
+  });
+
+  const connected = realtime.status === "connected";
+  const busy = realtime.status === "connecting";
+  const toggleMic = async () => {
+    if (realtime.isCapturing) {
+      realtime.stopAudioCapture();
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    realtime.startAudioCapture(stream);
+  };
+  const end = () => {
+    realtime.stopAudioCapture();
+    realtime.disconnect();
+    onEnd();
+  };
+
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Radio className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold text-foreground">Vercel Voice session</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusChip tone={connected ? "green" : realtime.status === "error" ? "amber" : "slate"} dot pulse={busy}>
+            {realtime.status}
+          </StatusChip>
+          <StatusChip tone={realtime.isCapturing ? "green" : "slate"}>
+            {realtime.isCapturing ? "mic on" : "mic off"}
+          </StatusChip>
+          {realtime.isPlaying && <StatusChip tone="blue">speaking</StatusChip>}
+        </div>
+      </div>
+
+      <div className="flex h-28 items-center justify-center border-b border-border bg-secondary/30">
+        <div className="flex h-16 w-56 items-end justify-center gap-1.5">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <span
+              key={i}
+              className={cn(
+                "w-2 rounded-full bg-brand-500/70 transition-all",
+                (realtime.isCapturing || realtime.isPlaying) && "animate-bar-bounce",
+              )}
+              style={{ height: `${16 + Math.abs(4 - i) * 6}px`, animationDelay: `${i * 0.08}s` }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {realtime.messages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <Radio className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">
+              {connected ? "Connected to Vercel Voice" : "Connect when you're ready"}
+            </p>
+            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+              Start the mic and speak as the payer representative. Vercel Voice will answer with realtime audio using the session prompt from setup.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {realtime.messages.map((message) => (
+              <div
+                key={message.id}
+                className={cn(
+                  "rounded-xl border p-3 text-sm",
+                  message.role === "user" ? "border-border bg-secondary/40" : "border-brand-500/20 bg-brand-500/10",
+                )}
+              >
+                <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {message.role === "user" ? "You" : "Vercel Voice"}
+                </div>
+                <p className="whitespace-pre-wrap leading-relaxed text-foreground">{messageText(message)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
+        <div className="flex gap-2">
+          <Button onClick={connected ? realtime.disconnect : realtime.connect} disabled={busy}>
+            <Radio className={cn("h-4 w-4", busy && "animate-pulse")} />
+            {connected ? "Disconnect" : busy ? "Connecting..." : "Connect"}
+          </Button>
+          <Button variant="outline" onClick={toggleMic} disabled={!connected}>
+            <Mic className="h-4 w-4" />
+            {realtime.isCapturing ? "Stop mic" : "Start mic"}
+          </Button>
+        </div>
+        <Button variant="outline" onClick={end}><PhoneOff className="h-4 w-4" /> End session</Button>
+      </div>
+    </>
+  );
+}
+
+function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }): string {
+  if (typeof message.content === "string" && message.content) return message.content;
+  const text = (message.parts ?? [])
+    .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+    .join("")
+    .trim();
+  return text || "…";
 }
 
 /**
