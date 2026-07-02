@@ -15,6 +15,7 @@ import asyncio
 import json
 import re
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
@@ -167,16 +168,29 @@ async def chat(
             request = asyncio.create_task(
                 client.post(f"{endpoint.base_url}/chat/completions", json=payload, headers=headers)
             )
-            if abort is not None:
-                abort_wait = asyncio.create_task(abort.wait())
-                done, _pending = await asyncio.wait(
-                    {request, abort_wait}, return_when=asyncio.FIRST_COMPLETED
-                )
-                if abort_wait in done and request not in done:
+            abort_wait = asyncio.create_task(abort.wait()) if abort is not None else None
+            try:
+                if abort_wait is not None:
+                    done, _pending = await asyncio.wait(
+                        {request, abort_wait}, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if abort_wait in done and request not in done:
+                        request.cancel()
+                        with suppress(BaseException):
+                            await request
+                        raise LLMAborted("run stopped during inference")
+                    abort_wait.cancel()
+                res = await request
+            except BaseException:
+                if not request.done():
                     request.cancel()
-                    raise LLMAborted("run stopped during inference")
-                abort_wait.cancel()
-            res = await request
+                    with suppress(BaseException):
+                        await request
+                if abort_wait is not None and not abort_wait.done():
+                    abort_wait.cancel()
+                    with suppress(BaseException):
+                        await abort_wait
+                raise
 
         if res.status_code >= 400:
             raise _http_error(endpoint, res.status_code, res.text)

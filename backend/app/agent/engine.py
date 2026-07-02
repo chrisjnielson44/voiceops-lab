@@ -23,8 +23,11 @@ from app.agent.notes import extract_notes
 from app.agent.prediction import (
     CONFIDENCE_PREFETCH,
     PREFETCH_TOP,
+    load_prediction_priors,
     normalize_prediction_set,
+    persist_prediction_observation,
     prefetch_key,
+    rescore_prediction_set,
     stats_summary,
 )
 from app.agent.reasoning import narrate_graph, narrate_predictions, narrate_think
@@ -302,7 +305,7 @@ class CallEngine:
                 lat = self.now() - started
                 run.prefetch_cache[key] = {
                     "status": "ready", "result": res.result, "status_tool": res.status,
-                    "phi": res.phi, "data": res.data, "latency_ms": lat, "intent": p.intent,
+                    "phi": res.phi, "data": res.data, "latency_ms": lat, "intent": p.intent, "tool": tool_name,
                 }
                 emit(run, ev.prefetch_event(PrefetchRecord(key=key, kind="tool", status="ready", intent=p.intent, label=tool_name, saved_ms=lat)))
             except (LLMAborted, asyncio.CancelledError):
@@ -331,6 +334,7 @@ class CallEngine:
             self.last_prediction = _normalize_prediction(pr.value, self.scenario)
             emit(run, ev.prediction_event(self.last_prediction))
             ps = normalize_prediction_set(pr.value, self.scenario)
+            ps = rescore_prediction_set(ps, self.scenario, run.prediction_learner, self.pack.predicted_tool_for)
             ps.generated_at_ms = self.now()
             ps.model_ms = pr.latency_ms
             ps.hit_rate, ps.avg_saved_ms, ps.wasted = stats_summary(run.pred_stats)
@@ -368,6 +372,7 @@ class CallEngine:
 
     async def setup(self) -> None:
         run = self.run
+        await load_prediction_priors(run.prediction_learner, self.scenario.id)
         emit(run, ev.status_event("dialing", 0, self.now()))
         self.push_audit(
             type="call.session.open",
@@ -494,10 +499,15 @@ class CallEngine:
             cached["status"] = "evicted"
             run.pred_stats["hits"] += 1
             run.pred_stats["savedMs"] += saved_ms
+            run.prediction_learner.observe(self.scenario.id, tool_name, hit=True)
+            await persist_prediction_observation(self.scenario.id, tool_name, hit=True)
             emit(run, ev.prefetch_event(PrefetchRecord(
                 key=key, kind="tool", status="hit", intent=cached.get("intent"), label=tool_name, saved_ms=saved_ms,
             )))
         else:
+            if self.pack.predicted_tool_for(tool_name, self.scenario):
+                run.prediction_learner.observe(self.scenario.id, tool_name, hit=True)
+                await persist_prediction_observation(self.scenario.id, tool_name, hit=True)
             res = await self.pack.execute_tool(
                 tool_name,
                 tool_args,
@@ -618,6 +628,11 @@ class CallEngine:
                     await run.pred_task
                 except BaseException:  # noqa: BLE001 - predictor is best-effort
                     pass
+        for cached in run.prefetch_cache.values():
+            if cached.get("status") == "ready" and cached.get("tool"):
+                cached["status"] = "stale"
+                run.prediction_learner.observe(self.scenario.id, str(cached["tool"]), hit=False)
+                await persist_prediction_observation(self.scenario.id, str(cached["tool"]), hit=False)
 
     async def finalize(self) -> None:
         await self.drain_prediction()

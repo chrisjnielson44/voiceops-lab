@@ -48,6 +48,27 @@ cp .env.example .env                        # fill in DATABASE_URL_UNPOOLED + LO
 .venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
+## Train Anticipation From Local Sims
+
+The anticipation learner is trained by running real local-model simulations and
+persisting prefetch hit/miss feedback into Postgres. This is online ranking
+training for anticipation priors, not fine-tuning the LLM weights.
+
+```bash
+cd backend
+.venv/bin/alembic upgrade head
+
+# In another shell, keep a local OpenAI-compatible model server running.
+~/.voiceops-mlx-venv/bin/mlx_lm.server --model mlx-community/Qwen2.5-7B-Instruct-4bit --port 8080
+
+# Run training sims. Repeat --scenario to focus training on a subset.
+.venv/bin/python scripts/train_anticipation.py --runs 12 --model mlx-community/Qwen2.5-7B-Instruct-4bit
+.venv/bin/python scripts/train_anticipation.py --runs 8 --scenario elig-aetna --scenario claim-uhc
+```
+
+The script reports learner stats before/after plus each run's prediction hit,
+miss, saved-ms, and wasted-prefetch counts.
+
 Open **http://localhost:8000/docs** for the OpenAPI explorer.
 
 ## Endpoints
