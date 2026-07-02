@@ -18,6 +18,7 @@ from app.agent.prediction import (
     PREFETCH_TOP,
     normalize_prediction_set,
     prefetch_key,
+    rescore_prediction_set,
     stats_summary,
 )
 from app.agent.reasoning import narrate_graph, narrate_predictions, narrate_think
@@ -303,7 +304,7 @@ async def run_orchestrator(run: RunState) -> None:
                 lat = now() - started
                 run.prefetch_cache[key] = {
                     "status": "ready", "result": res.result, "status_tool": res.status,
-                    "phi": res.phi, "data": res.data, "latency_ms": lat, "intent": p.intent,
+                    "phi": res.phi, "data": res.data, "latency_ms": lat, "intent": p.intent, "tool": tool_name,
                 }
                 emit(run, ev.prefetch_event(PrefetchRecord(key=key, kind="tool", status="ready", intent=p.intent, label=tool_name, saved_ms=lat)))
             except (LLMAborted, asyncio.CancelledError):
@@ -333,6 +334,7 @@ async def run_orchestrator(run: RunState) -> None:
             last_prediction = _normalize_prediction(pr.value, scenario)
             emit(run, ev.prediction_event(last_prediction))
             ps = normalize_prediction_set(pr.value, scenario)
+            ps = rescore_prediction_set(ps, scenario, run.prediction_learner, pack.predicted_tool_for)
             ps.generated_at_ms = now()
             ps.model_ms = pr.latency_ms
             ps.hit_rate, ps.avg_saved_ms, ps.wasted = stats_summary(run.pred_stats)
@@ -520,10 +522,13 @@ async def run_orchestrator(run: RunState) -> None:
                     cached["status"] = "evicted"
                     run.pred_stats["hits"] += 1
                     run.pred_stats["savedMs"] += saved_ms
+                    run.prediction_learner.observe(scenario.id, tool_name, hit=True)
                     emit(run, ev.prefetch_event(PrefetchRecord(
                         key=key, kind="tool", status="hit", intent=cached.get("intent"), label=tool_name, saved_ms=saved_ms,
                     )))
                 else:
+                    if pack.predicted_tool_for(tool_name, scenario):
+                        run.prediction_learner.observe(scenario.id, tool_name, hit=True)
                     res = await pack.execute_tool(
                         tool_name,
                         tool_args,
@@ -692,6 +697,11 @@ async def run_orchestrator(run: RunState) -> None:
                     await run.pred_task
                 except BaseException:  # noqa: BLE001 - predictor is best-effort, never block finalize
                     pass
+
+        for cached in run.prefetch_cache.values():
+            if cached.get("status") == "ready" and cached.get("tool"):
+                cached["status"] = "stale"
+                run.prediction_learner.observe(scenario.id, str(cached["tool"]), hit=False)
 
         if outcome != "stopped":
             if outcome == "escalated":
