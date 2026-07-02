@@ -149,16 +149,27 @@ Provide 2-4 ranked predictions (most likely first). Output ONLY the JSON."""
         # Unknown tool name from the model — fail soft so the loop continues.
         return ToolResult(f"Tool '{tool}' is not available in this scenario.", "warn", False)
 
-    def tool_context(self, *, run_id: str, scenario: Scenario, transcript: str) -> ToolContext:
+    def tool_context(self, *, run_id: str, scenario: Scenario, transcript: str, model: str | None = None) -> ToolContext:
         return ToolContext(
             run_id=run_id,
             scenario_id=scenario.id,
             member_id=scenario.patient.member_id,
             transcript=transcript,
+            model=model,
         )
 
     # No DB-backed graph for generic domains — the orchestrator skips retrieval.
     async def build_graph(self, scenario: Scenario):
+        return None
+
+    def predicted_tool_for(self, intent: str, scenario: Scenario) -> tuple[str, dict] | None:
+        """Map generic predicted intents to safe read tools for simulations."""
+        i = (intent or "").lower()
+        ref = scenario.patient.member_id
+        if any(k in i for k in ("lookup", "record", "identify", "authenticate", "reference")):
+            return ("lookup_record", {"reference": ref})
+        if any(k in i for k in ("verify", "detail", "status", "confirm", "field", "fact")):
+            return ("verify_details", {"reference": ref})
         return None
 
     def sensitive_scope(self, scenario: Scenario) -> str | None:

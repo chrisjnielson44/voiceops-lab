@@ -14,6 +14,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agent.prediction import GLOBAL_PREDICTION_LEARNER
 from app.core.format import now_ms
 
 # Sentinel pushed into subscriber queues to signal "no more events".
@@ -60,6 +61,7 @@ class RunState:
     # Last anticipatory PredictionSet, kept so the next turn's reasoning trace can
     # narrate which predictions the agent had weighed/prefetched.
     last_pred_set: Any = None
+    prediction_learner: Any = field(default_factory=lambda: GLOBAL_PREDICTION_LEARNER)
     pred_stats: dict[str, int] = field(default_factory=lambda: {"hits": 0, "misses": 0, "savedMs": 0, "wasted": 0})
 
 
