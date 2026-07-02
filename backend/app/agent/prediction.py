@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.format import clamp
+from app.db import query
 from app.schemas.agent import PredictedEntity, Prediction, PredictionSet
 from app.schemas.simulation import Scenario
 
@@ -49,6 +50,36 @@ class PredictionLearner:
 
 
 GLOBAL_PREDICTION_LEARNER = PredictionLearner()
+
+
+async def load_prediction_priors(learner: PredictionLearner, scenario_id: str) -> None:
+    """Best-effort load of persisted priors for one scenario."""
+    try:
+        rows = await query(
+            "SELECT scenario_id, tool, hits, misses FROM prediction_learner_stats WHERE scenario_id = $1",
+            [scenario_id],
+        )
+    except Exception:  # noqa: BLE001 - prediction learning must not block sims
+        return
+    for row in rows:
+        key = f"{row['scenario_id']}:{row['tool']}"
+        learner.stats[key] = {"hits": float(row.get("hits") or 0), "misses": float(row.get("misses") or 0)}
+
+
+async def persist_prediction_observation(scenario_id: str, tool: str, *, hit: bool) -> None:
+    """Best-effort durable update for simulation feedback."""
+    try:
+        await query(
+            """INSERT INTO prediction_learner_stats(scenario_id, tool, hits, misses)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (scenario_id, tool) DO UPDATE SET
+                 hits = prediction_learner_stats.hits + EXCLUDED.hits,
+                 misses = prediction_learner_stats.misses + EXCLUDED.misses,
+                 updated_at = now()""",
+            [scenario_id, tool, 1 if hit else 0, 0 if hit else 1],
+        )
+    except Exception:  # noqa: BLE001 - DB persistence is additive, never critical path correctness
+        return
 
 
 def prefetch_key(tool: str, args: dict[str, Any]) -> str:

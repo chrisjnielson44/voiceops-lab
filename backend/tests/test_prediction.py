@@ -1,10 +1,13 @@
 """Unit tests for the anticipatory-prediction helpers (pure; no model/DB)."""
 from __future__ import annotations
 
+from app import db
 from app.agent.prediction import (
     MAX_PREDICTIONS,
     PredictionLearner,
+    load_prediction_priors,
     normalize_prediction_set,
+    persist_prediction_observation,
     prefetch_key,
     rescore_prediction_set,
     stats_summary,
@@ -12,6 +15,7 @@ from app.agent.prediction import (
 from app.packs.generic import GenericPack
 from app.packs.healthcare import HealthcarePack
 from app.simulation.scenarios import SCENARIOS
+from tests.conftest import FakePool
 
 
 def _scenario(scenario_id: str):
@@ -93,3 +97,29 @@ def test_generic_pack_maps_predictions_to_read_tools():
     assert pack.predicted_tool_for("lookup_record", scn) == ("lookup_record", {"reference": scn.patient.member_id})
     assert pack.predicted_tool_for("verify_status", scn) == ("verify_details", {"reference": scn.patient.member_id})
     assert pack.predicted_tool_for("small_talk", scn) is None
+
+
+async def test_prediction_learner_loads_persisted_priors(monkeypatch):
+    def responder(query: str, params):
+        if "FROM prediction_learner_stats" in query:
+            return [{"scenario_id": params[0], "tool": "verify_eligibility", "hits": 9, "misses": 1}]
+        return []
+
+    monkeypatch.setattr(db, "_pool", FakePool(responder))
+    learner = PredictionLearner()
+
+    await load_prediction_priors(learner, "elig-aetna")
+
+    assert learner.prior("elig-aetna", "verify_eligibility") > 0.8
+
+
+async def test_prediction_observation_persists_feedback(monkeypatch):
+    pool = FakePool(lambda _query, _params: [])
+    monkeypatch.setattr(db, "_pool", pool)
+
+    await persist_prediction_observation("elig-aetna", "verify_eligibility", hit=True)
+    await persist_prediction_observation("elig-aetna", "verify_claim", hit=False)
+
+    assert len(pool.executed) == 2
+    assert pool.executed[0][1] == ("elig-aetna", "verify_eligibility", 1, 0)
+    assert pool.executed[1][1] == ("elig-aetna", "verify_claim", 0, 1)

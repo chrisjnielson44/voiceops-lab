@@ -16,7 +16,9 @@ from app.agent.notes import extract_notes
 from app.agent.prediction import (
     CONFIDENCE_PREFETCH,
     PREFETCH_TOP,
+    load_prediction_priors,
     normalize_prediction_set,
+    persist_prediction_observation,
     prefetch_key,
     rescore_prediction_set,
     stats_summary,
@@ -369,6 +371,7 @@ async def run_orchestrator(run: RunState) -> None:
     outcome = "completed"
 
     try:
+        await load_prediction_priors(run.prediction_learner, scenario.id)
         emit(run, ev.status_event("dialing", 0, now()))
         push_audit(
             type="call.session.open",
@@ -523,12 +526,14 @@ async def run_orchestrator(run: RunState) -> None:
                     run.pred_stats["hits"] += 1
                     run.pred_stats["savedMs"] += saved_ms
                     run.prediction_learner.observe(scenario.id, tool_name, hit=True)
+                    await persist_prediction_observation(scenario.id, tool_name, hit=True)
                     emit(run, ev.prefetch_event(PrefetchRecord(
                         key=key, kind="tool", status="hit", intent=cached.get("intent"), label=tool_name, saved_ms=saved_ms,
                     )))
                 else:
                     if pack.predicted_tool_for(tool_name, scenario):
                         run.prediction_learner.observe(scenario.id, tool_name, hit=True)
+                        await persist_prediction_observation(scenario.id, tool_name, hit=True)
                     res = await pack.execute_tool(
                         tool_name,
                         tool_args,
@@ -702,6 +707,7 @@ async def run_orchestrator(run: RunState) -> None:
             if cached.get("status") == "ready" and cached.get("tool"):
                 cached["status"] = "stale"
                 run.prediction_learner.observe(scenario.id, str(cached["tool"]), hit=False)
+                await persist_prediction_observation(scenario.id, str(cached["tool"]), hit=False)
 
         if outcome != "stopped":
             if outcome == "escalated":
